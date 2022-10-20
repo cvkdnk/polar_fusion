@@ -129,7 +129,6 @@ dmypy.json
 .pyre/
 
 # Custom
-
 experiments
 third_party
 .idea
