@@ -21,11 +21,12 @@ class SemKittiUtils:
     def load_data(bin_path: str, return_ins_label=False, test_mode=False):
         pt_features = np.fromfile(bin_path, dtype=np.float32).reshape(-1, 4)
         if test_mode:
-            sem_labels =
+            sem_labels = np.zeros(pt_features.shape[0], dtype=np.int32)
             return pt_features, None
         labels = np.fromfile(bin_path.replace("velodyne", "labels")[:-3]+"label", np.uint32)
         sem_labels = labels & 0xFFFF
-        ins_labels = labels >> 16
+        if return_ins_label:
+            ins_labels = labels >> 16
         if return_ins_label:
             return pt_features, sem_labels, ins_labels
         else:
@@ -38,8 +39,9 @@ class SemKittiUtils:
     @staticmethod
     def label2word(labels, word_mapping, learning_map_inv=None):
         """If learning_map_inv is not None, it should give the dict."""
+        map_labels = np.copy(labels)
         if learning_map_inv is not None:
-            labels = np.vectorize(learning_map_inv.__getitem__)(labels)
-        words = np.vectorize(word_mapping.__getitem__)(labels)
+            map_labels = np.vectorize(learning_map_inv.__getitem__)(labels)
+        words = np.vectorize(word_mapping.__getitem__)(map_labels)
         return words
 

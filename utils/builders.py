@@ -23,5 +23,5 @@ class DatasetBuilder(Dataset):
 
 if __name__ == '__main__':
     db = DatasetBuilder()
-    print("sub_classes: ", db.__subclasses__())
+    print("sub_classes: ", DatasetBuilder.__subclasses__())
     print(db.get_config_params())
