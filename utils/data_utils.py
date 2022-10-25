@@ -25,23 +25,28 @@ class SemKittiUtils:
             return pt_features, None
         labels = np.fromfile(bin_path.replace("velodyne", "labels")[:-3]+"label", np.uint32)
         sem_labels = labels & 0xFFFF
+        ins_labels = None
         if return_ins_label:
             ins_labels = labels >> 16
         if return_ins_label:
             return pt_features, sem_labels, ins_labels
         else:
-            return pt_features, sem_labels
+            return pt_features, sem_labels, ins_labels
 
-    @staticmethod
-    def label_mapping(self, sem_labels, kitti_config):
-        return np.vectorize(kitti_config["learning_map"].__getitem__)(sem_labels)
 
-    @staticmethod
-    def label2word(labels, word_mapping, learning_map_inv=None):
-        """If learning_map_inv is not None, it should give the dict."""
-        map_labels = np.copy(labels)
-        if learning_map_inv is not None:
-            map_labels = np.vectorize(learning_map_inv.__getitem__)(labels)
-        words = np.vectorize(word_mapping.__getitem__)(map_labels)
-        return words
+class NuScenesUtils:
+    """A set of utils used to process NuScenes dataset"""
+
+
+def label_mapping(labels, label_map):
+    return np.vectorize(label_map.__getitem__)(labels)
+
+
+def label2word(labels, word_mapping, learning_map_inv=None):
+    """If learning_map_inv is not None, it should give a dict."""
+    map_labels = np.copy(labels)
+    if learning_map_inv is not None:
+        map_labels = np.vectorize(learning_map_inv.__getitem__)(labels)
+    words = np.vectorize(word_mapping.__getitem__)(map_labels)
+    return words
 

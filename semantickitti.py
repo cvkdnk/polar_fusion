@@ -1,17 +1,52 @@
 import numpy as np
 import torch, yaml, os
+from torch.utils.data import Dataset
 from numba import jit
-
+from collections import defaultdict
+import torchsparse
+from torchsparse import SparseTensor
+from torchsparse import nn as spnn
+from torchsparse.utils.collate import sparse_collate_fn
+from torchsparse.utils.quantize import sparse_quantize
 
 from utils.data_utils import SemKittiUtils
-from utils.builders import DatasetBuilder
 
 
-class PointDataset(DatasetBuilder):
-    """Load raw points' data and semantic labels with label_mapping only. No data augment."""
+class KITTIConfig(ConfigBaseStruct):
+    """KITTI dataset type: point, voxel, range, bev."""
+    REGISTERED = defaultdict(dict)
+    EXCEPTION_INFO = "ds_type should be one of [point, voxel, hybrid], not {}"
+
+    @classmethod
+    def register(cls, name=None, ds_type=None):
+        if ds_type is None:
+            raise Exception(cls.EXCEPTION_INFO.format(ds_type))
+
+        def wrapper(wrapped_cls):
+            class Decorate:
+                def __init__(self, ds_name, ds_cls):
+                    self.name = ds_name
+                    self.ds_cls = ds_cls
+                    self.type = ds_type
+
+                def __call__(self, *args, **kwargs):
+                    return self.ds_cls(*args, **kwargs)
+
+            cls.REGISTERED[ds_type][name] = Decorate(name, wrapped_cls)
+            return cls.REGISTERED[ds_type][name]
+        return wrapper
+
+    @classmethod
+    def get(cls, name, ds_type=None):
+        if ds_type is None:
+            raise Exception(cls.EXCEPTION_INFO.format(ds_type))
+        return cls.REGISTERED[ds_type][name]
+
+
+class SemanticKITTI(Dataset):
     def __init__(self, data_root, mode='train', return_ref=True,
                  kitti_yaml="./config/semantic-kitti.yaml"):
-        super(PointDataset, self).__init__()
+        super(SemanticKITTI, self).__init__()
         self.return_ref = return_ref
         with open(kitti_yaml, 'r') as f:
             self.kitti_config = yaml.safe_load(f)
@@ -28,6 +63,16 @@ class PointDataset(DatasetBuilder):
         self.data_path = SemKittiUtils.load_data_path(data_root, split)
 
     def __getitem__(self, item):
+        raise NotImplementedError
+
+    def __len__(self):
+        return len(self.data_path)
+
+
+@KITTIConfig.register(ds_type="Point")
+class PointDataset(SemanticKITTI):
+    """Load raw points' data and semantic labels with label_mapping only. No data augment."""
+    def __getitem__(self, item):
         pt_features, sem_labels = SemKittiUtils.load_data(self.data_path[item])
         sem_labels = np.vectorize(self.kitti_config["learning_map"].__getitem__)(sem_labels)
         if self.return_ref:
@@ -35,11 +80,9 @@ class PointDataset(DatasetBuilder):
         else:
             return pt_features[:, :3], sem_labels
 
-    def __len__(self):
-        return len(self.data_path)
 
-
-class PointDatasetWithInsLabel(PointDataset):
+@KITTIConfig.register(ds_type="Point")
+class PointDatasetWithInsLabel(SemanticKITTI):
     """Load raw points' data semantic labels with label_mapping only. No data augment."""
     def __getitem__(self, item):
         pt_features, sem_labels, ins_labels = SemKittiUtils.load_data(self.data_path[item], return_ins_label=True)
@@ -49,11 +92,9 @@ class PointDatasetWithInsLabel(PointDataset):
         else:
             return pt_features[:, :3], sem_labels, ins_labels
 
-    def __len__(self):
-        return len(self.data_path)
 
-
-class AugmentPointDataset(PointDataset):
+@KITTIConfig.register(ds_type="Point")
+class AugmentPointDataset(SemanticKITTI):
     """Load points and do random data augment, which include rotate, jitter, scale and flip."""
     def __init__(self, data_root, mode='train', return_ref=True, kitti_yaml="./config/semantic-kitti.yaml",
                  rotate_aug=False, jitter_aug=False, scale_aug=False, flip_aug=False):
@@ -140,8 +181,19 @@ class AugmentPointDataset(PointDataset):
         return flipped_points
 
 
-class VoxelDataset(DatasetBuilder):
-    def __init__(self, pt_dataset, mode='train', voxel_size=0.05, rotate_aug=False, flip_aug=False, ignore_label=255,
+@KITTIConfig.register(ds_type="Point")
+class InsAugPointDataset(AugmentPointDataset):
+    def __init__(self, data_root, mode='train', return_ref=True, kitti_yaml="./config/semantic-kitti.yaml",
+                 rotate_aug=False, jitter_aug=False, scale_aug=False, flip_aug=False, ins_aug=False, ins_aug_num=1,
+                 ins_aug_classes=None):
+        super(InsAugPointDataset, self).__init__(data_root, mode, return_ref, kitti_yaml, rotate_aug,
+                                                 jitter_aug, scale_aug, flip_aug)
+        # TODO: complete the ins_aug_dataset
+
+
+@KITTIConfig.register(ds_type="Voxel")
+class VoxelDataset(SemanticKITTI):
+    def __init__(self, pt_dataset, mode='train', voxel_size=0.05, ignore_label=255,
                  return_test=False, fixed_volume_space=False, max_volume_space=[50, 50, 1.5],
                  min_volume_space=[-50, -50, -3]):
         super(VoxelDataset, self).__init__()
@@ -149,10 +201,8 @@ class VoxelDataset(DatasetBuilder):
         self.mode = mode
         self.kitti_config = pt_dataset.kitti_config
         self.voxel_size = voxel_size
-        self.rotate_aug = rotate_aug
         self.ignore_label = ignore_label
         self.return_test = return_test
-        self.flip_aug = flip_aug
         self.fixed_volume_space = fixed_volume_space
         self.max_volume_space = max_volume_space
         self.min_volume_space = min_volume_space
@@ -165,7 +215,16 @@ class VoxelDataset(DatasetBuilder):
     def sparse_voxel_generator(self, pt_features, label, voxel_size):
         coords = pt_features[:, :3]
         coords -= np.min(coords, axis=0, keepdims=True)
+        feats = pt_features[:, 3:]
+        coords, indices = sparse_quantize(coords, voxel_size, return_index=True)
+        coords = torch.tensor(coords, dtype=torch.int32)
+        vox_feats = torch.tensor(feats[indices], dtype=torch.float32)
+        vox_labels = torch.tensor(label[indices], dtype=torch.int32)
+        input = SparseTensor(coords=coords, feats=feats)
 
+
+@KITTIConfig.register(ds_type="Voxel")
+class CylinderDataset(SemanticKITTI):
 
 
 
