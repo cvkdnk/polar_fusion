@@ -66,7 +66,7 @@ class SemanticKITTI(BaseDataset):
 
     def __init__(self, ds_config, mode='train', return_ins_label=False):
         super(SemanticKITTI, self).__init__()
-        self.return_ref = ds_config["return_ref"]
+        self.return_ref = ds_config["return_rem"]
         self.return_ins_label = return_ins_label
         self.mode = mode
         with open(ds_config["kitti_yaml"], 'r') as f:
@@ -105,7 +105,7 @@ class SemanticKITTI(BaseDataset):
     def gen_config_template(cls):
         cfg_struct = {
             'data_root': cls.default_str,
-            'return_ref': True,
+            'return_rem': True,
             'kitti_yaml': "./config/semantic-kitti.yaml"
         }
         return cfg_struct

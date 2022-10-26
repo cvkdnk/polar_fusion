@@ -1,6 +1,10 @@
 import numpy as np
+import torch
+from torchsparse import SparseTensor
+from torchsparse.utils.quantize import sparse_quantize
 
 from utils.pf_base_class import PFBaseClass
+from utils.data_utils import cart2polar, polar2cart, cart2polar3d, polar2cart3d
 
 
 class DataPipelineBuilder:
@@ -15,9 +19,22 @@ class DataPipelineBuilder:
         return pipeline_class
 
 
+class DataPipelineBaseClass(PFBaseClass):
+    RETURN_TYPE = None
+
+    @classmethod
+    def gen_config_template(cls):
+        raise NotImplementedError
+
+    def __init__(self):
+        if self.RETURN_TYPE is None:
+            raise NotImplementedError
+
 @DataPipelineBuilder.register
-class PointAugmentor(PFBaseClass):
+class PointAugmentor(DataPipelineBaseClass):
     """Point Augmentor, which include rotate, jitter, scale and flip """
+    RETURN_TYPE = "Point"
+
     def __init__(self, config):
         super(PointAugmentor, self).__init__()
         self.rotate = config["rotate"]
@@ -25,6 +42,7 @@ class PointAugmentor(PFBaseClass):
         self.scale = config["scale"]
         self.flip = config["flip"]
 
+    @classmethod
     def gen_config_template(cls):
         return {
             "rotate": {'inuse': True, 'rotation_range': 180},
@@ -33,7 +51,7 @@ class PointAugmentor(PFBaseClass):
             "flip": {'inuse': True, 'flip_axis': 0}
         }
 
-    def __call__(self, pt_features):
+    def __call__(self, pt_features, labels):
         aug_features = pt_features.copy()
         if self.rotate["inuse"]:
             aug_features[:, :3] = self.rotate_point_cloud(pt_features[:, :3], self.rotate["rotation_range"])
@@ -43,7 +61,7 @@ class PointAugmentor(PFBaseClass):
             aug_features[:, :3] = self.scale_point_cloud(pt_features[:, :3], self.scale["scale_range"])
         if self.flip["inuse"]:
             aug_features[:, :3] = self.flip_point_cloud(pt_features[:, :3], self.flip["flip_axis"])
-        return aug_features
+        return {"Point": aug_features}
 
     @staticmethod
     def rotate_point_cloud(points, rotation_range=180):
@@ -102,7 +120,9 @@ class PointAugmentor(PFBaseClass):
 
 
 @DataPipelineBuilder.register
-class InsAugPointAugmentor(PFBaseClass):  # TODO: Complete this class
+class InsAugPointAugmentor(DataPipelineBaseClass):  # TODO: Complete this class
+    RETURN_TYPE = "Point"
+
     def __init__(self, config):
         super(InsAugPointAugmentor, self).__init__()
         self.ins_aug_max_num = config["ins_aug_max_num"]
@@ -115,8 +135,8 @@ class InsAugPointAugmentor(PFBaseClass):  # TODO: Complete this class
         return {
             "ins_aug_max_num": 100,
             "ins_aug_scale": 0.05,
-            "ins_aug_classes": cls.default_str+", list type",
-            "ins_aug_num": cls.default_str+", list type"
+            "ins_aug_classes": cls.default_str + ", list type",
+            "ins_aug_num": cls.default_str + ", list type"
         }
 
     def __call__(self, pt_features):
@@ -125,17 +145,161 @@ class InsAugPointAugmentor(PFBaseClass):  # TODO: Complete this class
 
 @DataPipelineBuilder.register
 class Voxelize(PFBaseClass):
+    RETURN_TYPE = "Voxel"
+
     def __init__(self, config):
         super(Voxelize, self).__init__()
         self.voxel_size = config["voxel_size"]
-        self.
-        self.max_points_in_voxel = config["max_points_in_voxel"]
+        self.fixed_volume_space = config["fixed_volume_space"]  # {inuse, max, min}
         self.max_voxel_num = config["max_voxel_num"]
 
     @classmethod
     def gen_config_template(cls):
         return {
             "voxel_size": 0.05,
-            "":,
-            "max_voxel_num": cls.default_int
+            "fixed_volume_space": {
+                "inuse": False,
+                "max_volume_space": [50, 50, 1.5],
+                "min_volume_space": [-50, -50, -3]
+            }
         }
+
+    def __call__(self, pt_features, labels):
+        coords = pt_features[..., :3]
+        coords_pol3d = cart2polar3d(coords)
+
+        vox_coords, p2v_indices, v2p_indices = sparse_quantize(coords,
+                                                               voxel_size=self.voxel_size,
+                                                               return_index=True,
+                                                               return_inverse=True)
+        if self.fixed_volume_space["inuse"]:
+            vox_coords = np.clip(vox_coords,
+                                 self.fixed_volume_space["min_volume_space"],
+                                 self.fixed_volume_space["max_volume_space"])
+        vox_centers = vox_coords + self.voxel_size / 2
+        return_xyz = coords - vox_centers[v2p_indices]
+        return_xyz = np.concatenate([return_xyz, coords_pol3d, coords[..., :2]], axis=-1)
+
+        if pt_features.shape[1] == 3:
+            return_fea = return_xyz
+        else:
+            return_fea = np.concatenate((return_xyz, pt_features[:, 3:]), axis=-1)
+
+        return {"Voxel": [return_fea, vox_coords, p2v_indices, v2p_indices]}
+
+
+@DataPipelineBuilder.register
+class CylinderVoxelize(PFBaseClass):
+    RETURN_TYPE="Voxel"
+
+    def __init__(self, config):
+        super(CylinderVoxelize, self).__init__()
+        self.voxel_size = config["voxel_size"]
+        self.fixed_volume_space = config["fixed_volume_space"]
+        self.grid_shape = config["grid_shape"]
+
+    @classmethod
+    def gen_config_template(cls):
+        return {
+            "fixed_volume_space": {
+                "inuse": False,
+                "max_volume_space": [50, np.pi, 2],
+                "min_volume_space": [-50, -np.pi, -4]
+            },
+            "grid_shape": [480, 360, 32]
+        }
+
+    def __call__(self, pt_features, labels):
+        """return's return_fea is (regression_xyz, xyz_pol, xy, intensity)"""
+        xyz = pt_features[..., :3]
+        xyz_pol = cart2polar(xyz)
+        max_bound_r = np.percentile(xyz_pol[..., 0], 100, axis=-2)
+        min_bound_r = np.percentile(xyz_pol[..., 0], 0, axis=-2)
+        max_bound = np.max(xyz_pol[..., 1:], axis=-2)
+        min_bound = np.min(xyz_pol[..., 1:], axis=-2)
+        max_bound = np.concatenate(([max_bound_r], max_bound))
+        min_bound = np.concatenate(([min_bound_r], min_bound))
+        if self.fixed_volume_space["inuse"]:
+            max_bound = np.asarray(self.fixed_volume_space["max_volume_space"])
+            min_bound = np.asarray(self.fixed_volume_space["min_volume_space"])
+        # get grid index
+        crop_range = max_bound - min_bound
+        grid_size = crop_range / self.grid_shape
+        if (grid_size == 0).any():
+            print("Zero interval!")
+        voxel_coords_pol, p2v_indices, v2p_indices = sparse_quantize(xyz_pol, grid_size,
+                                                                     return_index=True,
+                                                                     return_inverse=True)
+        voxel_coords = polar2cart(voxel_coords_pol)
+
+        # center data on each voxel for PTnet
+        voxel_centers = voxel_coords + min_bound
+        return_xyz = xyz_pol - voxel_centers
+        return_xyz = np.concatenate((return_xyz, xyz_pol, xyz[..., :2]), axis=-1)
+
+        if pt_features.shape[1] == 3:
+            return_fea = return_xyz
+        else:
+            return_fea = np.concatenate((return_xyz, pt_features[:, 3:]), axis=-1)
+
+        return {"Voxel": [return_fea, voxel_coords, p2v_indices, v2p_indices]}
+
+
+@DataPipelineBuilder.register
+class RangeProject(DataPipelineBaseClass):
+    RETURN_TYPE = "Range"
+
+    def __init__(self, config):
+        super(RangeProject, self).__init__()
+        self.proj_H = config["proj_H"]
+        self.proj_W = config["proj_W"]
+        self.proj_fov_up = config["proj_fov_up"] / 180.0 * np.pi
+        self.proj_fov_down = config["proj_fov_down"] / 180.0 * np.pi
+
+    @classmethod
+    def gen_config_template(cls):
+        return {
+            "proj_H": 64,
+            "proj_W": 1024,
+            "proj_fov_up": 3,
+            "proj_fov_down": -25
+        }
+
+    def __call__(self, pt_features, labels):
+        coords = pt_features[..., :3]
+        coords_pol3d = cart2polar3d(coords)  # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX use cart2sphere
+        coords_pol3d[..., 2] = np.clip(coords_pol3d[..., 2], self.proj_fov_down, self.proj_fov_up)
+        fov = abs(self.proj_fov_up) - abs(self.proj_fov_down)
+        return {"Range": None}
+
+
+@DataPipelineBuilder.register
+class BevProject(DataPipelineBaseClass):  # TODO: complete this
+    RETURN_TYPE = "Bev"
+
+    def __init__(self, config):
+        super(BevProject, self).__init__()
+
+    @classmethod
+    def gen_config_template(cls):
+        return {}
+
+    def __call__(self, pt_features, labels):
+
+        return {"Bev": pt_features[..., 1:3]}
+
+
+@DataPipelineBuilder.register
+class PolarBevProject(DataPipelineBaseClass):  # TODO: complete this
+    RETURN_TYPE = "Bev"
+
+    def __init__(self, config):
+        super(PolarBevProject, self).__init__()
+
+
+    @classmethod
+    def gen_config_template(cls):
+        return {}
+
+    def __call__(self, pt_features, labels):
+        return {"Bev": pt_features[..., 1:]}

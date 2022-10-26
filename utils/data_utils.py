@@ -1,4 +1,5 @@
 import os
+import numba as nb
 from numba import jit
 import numpy as np
 
@@ -49,4 +50,62 @@ def label2word(labels, word_mapping, learning_map_inv=None):
         map_labels = np.vectorize(learning_map_inv.__getitem__)(labels)
     words = np.vectorize(word_mapping.__getitem__)(map_labels)
     return words
+
+
+def cart2polar(input_xyz):
+    rho = np.sqrt(input_xyz[..., 0] ** 2 + input_xyz[..., 1] ** 2)
+    phi = np.arctan2(input_xyz[..., 1], input_xyz[..., 0])
+    return np.stack((rho, phi, input_xyz[..., 2:]), axis=-1)
+
+
+def polar2cart(input_xyz_polar):
+    # print(input_xyz_polar.shape)
+    x = input_xyz_polar[..., 0] * np.cos(input_xyz_polar[..., 1])
+    y = input_xyz_polar[..., 0] * np.sin(input_xyz_polar[..., 1])
+    return np.stack((x, y, input_xyz_polar[..., 2:]), axis=-1)
+
+
+def cart2polar3d(input_xyz):
+    rho = np.sqrt(input_xyz[..., 0] ** 2 + input_xyz[..., 1] ** 2)
+    phi = np.arctan2(input_xyz[..., 1], input_xyz[..., 0])
+    theta = np.arctan2(input_xyz[..., 2], rho)
+    return np.stack((rho, phi, theta), axis=-1)
+
+
+def polar2cart3d(input_xyz):
+    x = input_xyz[..., 0] * np.cos(input_xyz[..., 1]) * np.sin(input_xyz[..., 2])
+    y = input_xyz[..., 0] * np.sin(input_xyz[..., 1]) * np.sin(input_xyz[..., 2])
+    z = input_xyz[..., 0] * np.cos(input_xyz[..., 2])
+    return np.stack((x, y, z), axis=-1)
+
+
+def cart2spherical(input_xyz):
+    rho = np.sqrt(input_xyz[..., 0] ** 2 + input_xyz[..., 1] ** 2 + input_xyz[..., 2] ** 2)
+    phi = np.arctan2(input_xyz[..., 1], input_xyz[..., 0])
+    theta = np.arccos(input_xyz[..., 2] / rho)
+    return np.stack((rho, phi, theta), axis=-1)
+
+
+def spherical2cart(input_xyz):
+    x = input_xyz[..., 0] * np.sin(input_xyz[..., 2]) * np.cos(input_xyz[..., 1])
+    y = input_xyz[..., 0] * np.sin(input_xyz[..., 2]) * np.sin(input_xyz[..., 1])
+    z = input_xyz[..., 0] * np.cos(input_xyz[..., 2])
+    return np.stack((x, y, z), axis=-1)
+
+
+@nb.jit('u1[:,:,:](u1[:,:,:],i8[:,:])', nopython=True, cache=True, parallel=False)
+def nb_process_label(processed_label, sorted_label_voxel_pair):
+    label_size = 256
+    counter = np.zeros((label_size,), dtype=np.uint16)
+    counter[sorted_label_voxel_pair[0, 3]] = 1
+    cur_sear_ind = sorted_label_voxel_pair[0, :3]
+    for i in range(1, sorted_label_voxel_pair.shape[0]):
+        cur_ind = sorted_label_voxel_pair[i, :3]
+        if not np.all(np.equal(cur_ind, cur_sear_ind)):
+            processed_label[cur_sear_ind[0], cur_sear_ind[1], cur_sear_ind[2]] = np.argmax(counter)
+            counter = np.zeros((label_size,), dtype=np.uint16)
+            cur_sear_ind = cur_ind
+        counter[sorted_label_voxel_pair[i, 3]] += 1
+    processed_label[cur_sear_ind[0], cur_sear_ind[1], cur_sear_ind[2]] = np.argmax(counter)
+    return processed_label
 
