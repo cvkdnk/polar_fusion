@@ -4,14 +4,15 @@ from torchsparse import SparseTensor
 from torchsparse.utils.quantize import sparse_quantize
 
 from utils.pf_base_class import PFBaseClass
-from utils.data_utils import cart2polar, polar2cart, cart2polar3d, polar2cart3d
+from utils.data_utils import cart2polar, polar2cart, cart2spherical, spherical2cart
 
 
 class DataPipelineBuilder:
     PIPELINE = {}
 
-    def get_pipeline(self, name, pipeline_config):
-        return self.PIPELINE[name](pipeline_config)
+    @classmethod
+    def get_pipeline(cls, name, pipeline_config):
+        return cls.PIPELINE[name](pipeline_config)
 
     @staticmethod
     def register(pipeline_class):
@@ -166,7 +167,7 @@ class Voxelize(PFBaseClass):
 
     def __call__(self, pt_features, labels):
         coords = pt_features[..., :3]
-        coords_pol3d = cart2polar3d(coords)
+        coords_pol = cart2polar(coords)
 
         vox_coords, p2v_indices, v2p_indices = sparse_quantize(coords,
                                                                voxel_size=self.voxel_size,
@@ -178,7 +179,7 @@ class Voxelize(PFBaseClass):
                                  self.fixed_volume_space["max_volume_space"])
         vox_centers = vox_coords + self.voxel_size / 2
         return_xyz = coords - vox_centers[v2p_indices]
-        return_xyz = np.concatenate([return_xyz, coords_pol3d, coords[..., :2]], axis=-1)
+        return_xyz = np.concatenate([return_xyz, coords_pol, coords[..., :2]], axis=-1)
 
         if pt_features.shape[1] == 3:
             return_fea = return_xyz
@@ -267,10 +268,46 @@ class RangeProject(DataPipelineBaseClass):
 
     def __call__(self, pt_features, labels):
         coords = pt_features[..., :3]
-        coords_pol3d = cart2polar3d(coords)  # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX use cart2sphere
-        coords_pol3d[..., 2] = np.clip(coords_pol3d[..., 2], self.proj_fov_down, self.proj_fov_up)
-        fov = abs(self.proj_fov_up) - abs(self.proj_fov_down)
-        return {"Range": None}
+        coords_sph = cart2spherical(coords)
+        coords_sph[..., 2] = np.clip(coords_sph[..., 2], self.proj_fov_down, self.proj_fov_up)
+        fov = self.proj_fov_up - self.proj_fov_down
+        depth = coords_sph[..., 0]
+        yaw = coords_sph[..., 1]
+        pitch = coords_sph[..., 2]
+
+        # project to image
+        proj_x = 0.5 * (yaw / np.pi + 1.0) * self.proj_W
+        proj_y = (1.0 - (pitch - self.proj_fov_down) / fov) * self.proj_H
+
+        # round and clamp for use as index
+        proj_x = np.floor(proj_x)
+        proj_x = np.clip(proj_x, 0, self.proj_W - 1)
+
+        proj_y = np.floor(proj_y)
+        proj_y = np.clip(proj_y, 0, self.proj_H - 1)
+
+        unproj_range = np.copy(depth)
+        # order in decreasing depth
+        order = np.argsort(depth)[::-1]
+        depth = depth[order]
+        indices = order
+        order_pt_features = pt_features[order]
+        proj_y = proj_y[order]
+        proj_x = proj_x[order]
+
+        # mapping to range image and inverse mapping
+        p2r_indices = np.zeros((pt_features.shape[0], 2), dtype=np.int32)
+        r2p_indices = np.zeros((self.proj_H, self.proj_W), dtype=np.int32)
+        p2r_indices[..., 0] = proj_y
+        p2r_indices[..., 1] = proj_x
+        r2p_indices[proj_y, proj_x] = indices
+        range_image = np.full((self.proj_H, self.proj_W, 5), -1, dtype=np.float32)
+        range_image[proj_y, proj_x, 0] = depth
+        range_image[proj_y, proj_x, 1:] = order_pt_features
+        range_mask = np.zeros((self.proj_H, self.proj_W), dtype=np.int32)
+        range_mask[proj_y, proj_x] = 1
+
+        return {"Range": [range_image, range_mask, p2r_indices, r2p_indices]}
 
 
 @DataPipelineBuilder.register

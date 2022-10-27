@@ -65,31 +65,32 @@ def polar2cart(input_xyz_polar):
     return np.stack((x, y, input_xyz_polar[..., 2:]), axis=-1)
 
 
-def cart2polar3d(input_xyz):
-    rho = np.sqrt(input_xyz[..., 0] ** 2 + input_xyz[..., 1] ** 2)
-    phi = np.arctan2(input_xyz[..., 1], input_xyz[..., 0])
-    theta = np.arctan2(input_xyz[..., 2], rho)
-    return np.stack((rho, phi, theta), axis=-1)
-
-
-def polar2cart3d(input_xyz):
-    x = input_xyz[..., 0] * np.cos(input_xyz[..., 1]) * np.sin(input_xyz[..., 2])
-    y = input_xyz[..., 0] * np.sin(input_xyz[..., 1]) * np.sin(input_xyz[..., 2])
-    z = input_xyz[..., 0] * np.cos(input_xyz[..., 2])
-    return np.stack((x, y, z), axis=-1)
+# def cart2polar3d(input_xyz):
+#     rho = np.sqrt(input_xyz[..., 0] ** 2 + input_xyz[..., 1] ** 2)
+#     phi = np.arctan2(input_xyz[..., 1], input_xyz[..., 0])
+#     theta = np.arctan2(input_xyz[..., 2], rho)
+#     return np.stack((rho, phi, theta), axis=-1)
+#
+#
+# def polar2cart3d(input_xyz):
+#     x = input_xyz[..., 0] * np.cos(input_xyz[..., 1]) * np.sin(input_xyz[..., 2])
+#     y = input_xyz[..., 0] * np.sin(input_xyz[..., 1]) * np.sin(input_xyz[..., 2])
+#     z = input_xyz[..., 0] * np.cos(input_xyz[..., 2])
+#     return np.stack((x, y, z), axis=-1)
 
 
 def cart2spherical(input_xyz):
-    rho = np.sqrt(input_xyz[..., 0] ** 2 + input_xyz[..., 1] ** 2 + input_xyz[..., 2] ** 2)
-    phi = np.arctan2(input_xyz[..., 1], input_xyz[..., 0])
-    theta = np.arccos(input_xyz[..., 2] / rho)
-    return np.stack((rho, phi, theta), axis=-1)
+    """return rho, phi, theta; also known as depth, yaw, pitch"""
+    depth = np.sqrt(input_xyz[..., 0] ** 2 + input_xyz[..., 1] ** 2 + input_xyz[..., 2] ** 2)
+    yaw = np.arctan2(input_xyz[..., 1], input_xyz[..., 0])
+    pitch = np.arcsin(input_xyz[..., 2] / depth)
+    return np.stack((depth, yaw, pitch), axis=-1)
 
 
-def spherical2cart(input_xyz):
-    x = input_xyz[..., 0] * np.sin(input_xyz[..., 2]) * np.cos(input_xyz[..., 1])
-    y = input_xyz[..., 0] * np.sin(input_xyz[..., 2]) * np.sin(input_xyz[..., 1])
-    z = input_xyz[..., 0] * np.cos(input_xyz[..., 2])
+def spherical2cart(input_dyp):
+    x = input_dyp[..., 0] * np.cos(input_dyp[..., 2]) * np.cos(input_dyp[..., 1])
+    y = input_dyp[..., 0] * np.cos(input_dyp[..., 2]) * np.sin(input_dyp[..., 1])
+    z = input_dyp[..., 0] * np.sin(input_dyp[..., 2])
     return np.stack((x, y, z), axis=-1)
 
 
@@ -109,3 +110,9 @@ def nb_process_label(processed_label, sorted_label_voxel_pair):
     processed_label[cur_sear_ind[0], cur_sear_ind[1], cur_sear_ind[2]] = np.argmax(counter)
     return processed_label
 
+
+def custom_collate_fn(batch):  # TODO: complete collate function
+    """Custom collate function to deal with batches that have different
+    numbers of samples per gpu.
+    """
+    raise NotImplementedError

@@ -6,15 +6,21 @@ from utils.data_utils import SemKittiUtils, label_mapping, label2word
 from utils.pf_base_class import PFBaseClass
 
 
-class DataBuilder:
+class DatasetBuilder:
     DATASET = {}
 
-    def get_dataset(self, name, ds_config):
-        return self.DATASET[name](ds_config)
+    @classmethod
+    def get_dataflow(cls, name, ds_config):
+        dataflow = {
+            "train": cls.DATASET[name](ds_config, mode="train"),
+            "val": cls.DATASET[name](ds_config, mode="val"),
+            "test": cls.DATASET[name](ds_config, mode="test")
+        }
+        return dataflow
 
     @staticmethod
     def register(dataset_class):
-        DataBuilder.DATASET[dataset_class.__name__] = dataset_class
+        DatasetBuilder.DATASET[dataset_class.__name__] = dataset_class
         return dataset_class
 
 
@@ -56,7 +62,7 @@ class BaseDataset(PFBaseClass):
         return mean, std, proportion
 
 
-@DataBuilder.register
+@DatasetBuilder.register
 class SemanticKITTI(BaseDataset):
     test_config = {
         'data_root': '/data/semantickitti/sequences',
@@ -94,9 +100,9 @@ class SemanticKITTI(BaseDataset):
         if not self.return_ref:
             pt_features = pt_features[:, :3]
         if self.return_ins_label:
-            return pt_features, sem_labels, ins_labels
+            return {"Point": pt_features, "Label": sem_labels, "InstanceLabel": ins_labels}
         else:
-            return pt_features, sem_labels
+            return {"Point": pt_features, "Label": sem_labels}
 
     def __len__(self):
         return len(self.data_path)
@@ -111,7 +117,7 @@ class SemanticKITTI(BaseDataset):
         return cfg_struct
 
 
-@DataBuilder.register
+@DatasetBuilder.register
 class NuScenes(BaseDataset): # TODO: complete nuscenes dataset
     def __init__(self):
         super().__init__()
