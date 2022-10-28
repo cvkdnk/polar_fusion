@@ -6,7 +6,7 @@ from utils.data_utils import SemKittiUtils, label_mapping, label2word
 from utils.pf_base_class import PFBaseClass
 
 
-class DatasetBuilder:
+class DatasetBuilder(PFBaseClass):
     DATASET = {}
 
     @classmethod
@@ -17,6 +17,11 @@ class DatasetBuilder:
             "test": cls.DATASET[name](ds_config, mode="test")
         }
         return dataflow
+
+    @classmethod
+    def gen_config_template(cls, name=None):
+        assert name in cls.DATASET.keys(), f"Dataset {name} not found in {cls.DATASET.keys()}"
+        return cls.DATASET[name].gen_config_template()
 
     @staticmethod
     def register(dataset_class):

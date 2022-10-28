@@ -10,8 +10,20 @@ from model.model_lib import ModelLibrary
 
 class DataBuilders(PFBaseClass):
     @classmethod
-    def gen_config_template(cls):
-        raise NotImplementedError
+    def gen_config_template(cls, dataset_name=None, data_pipeline=None):
+        return {
+            "dataset": DatasetBuilder.gen_config_template(dataset_name),
+            "pipeline": {
+                "train": {dp: DataPipelineBuilder.gen_config_template(dp) for dp in data_pipeline["train"]},
+                "val": {dp: DataPipelineBuilder.gen_config_template(dp) for dp in data_pipeline["val"]},
+                "test": {dp: DataPipelineBuilder.gen_config_template(dp) for dp in data_pipeline["test"]}
+            },
+            "dataloader": {
+                "train": {"batch_size": 4, "shuffle": True, "num_workers": 4, "pin_memory": True, "drop_last": False},
+                "val": {"batch_size": 4, "num_workers": 4, "pin_memory": True},
+                "test": {"batch_size": 1, "num_workers": 4, "pin_memory": True}
+            }
+        }
 
     def __init__(self, dataset_name, data_pipeline):
         self.dataset_name = dataset_name
@@ -40,16 +52,16 @@ class DataBuilders(PFBaseClass):
         test_dataset = DataPipeline(dataflow["test"], self.data_pipeline["test"], dataloader_config["test"])
 
         train_loader = DataLoader(train_dataset, collate_fn=custom_collate_fn, **dataloader_config["train"])
-        val_loader = DataLoader(val_dataset, collate_fn=custom_collate_fn, **dataloader_config["val"])
-        test_loader = DataLoader(test_dataset, collate_fn=custom_collate_fn, **dataloader_config["test"])
+        val_loader = DataLoader(val_dataset, shuffle=False, collate_fn=custom_collate_fn, **dataloader_config["val"])
+        test_loader = DataLoader(test_dataset, shuffle=False, collate_fn=custom_collate_fn, **dataloader_config["test"])
 
         return train_loader, val_loader, test_loader
 
 
 class ModelBuilder(PFBaseClass):
     @classmethod
-    def gen_config_template(cls):
-        pass
+    def gen_config_template(cls, model_name=None):
+        return ModelLibrary.gen_config_template(model_name)
 
     def __init__(self, model_name):
         self.model_name = model_name

@@ -5,8 +5,8 @@ class ModelLibrary(PFBaseClass):
     MODEL = {}
 
     @classmethod
-    def gen_config_template(cls):
-        pass
+    def gen_config_template(cls, name=None):
+        assert name in cls.MODEL.keys(), f"Model {name} not found in {cls.MODEL.keys()}"
 
     @classmethod
     def get_model(cls, name, config):

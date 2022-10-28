@@ -7,12 +7,17 @@ from utils.pf_base_class import PFBaseClass
 from utils.data_utils import cart2polar, polar2cart, cart2spherical, spherical2cart
 
 
-class DataPipelineBuilder:
+class DataPipelineBuilder(PFBaseClass):
     PIPELINE = {}
 
     @classmethod
     def get_pipeline(cls, name, pipeline_config):
         return cls.PIPELINE[name](pipeline_config)
+
+    @classmethod
+    def gen_config_template(cls, name=None):
+        assert name in cls.PIPELINE.keys(), f"Pipeline {name} not found in {cls.PIPELINE.keys()}"
+        return cls.PIPELINE[name].gen_config_template()
 
     @staticmethod
     def register(pipeline_class):
