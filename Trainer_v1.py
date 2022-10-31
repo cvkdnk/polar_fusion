@@ -5,9 +5,6 @@ from torchvision.transforms import ToTensor
 import pytorch_lightning as pl
 
 
-
-
-
 # define the LightningModule
 class LitAutoEncoder(pl.LightningModule):
     def __init__(self, encoder, decoder):

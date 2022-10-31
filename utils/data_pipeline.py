@@ -36,6 +36,38 @@ class DataPipelineBaseClass(PFBaseClass):
         if self.RETURN_TYPE is None:
             raise NotImplementedError
 
+    def __call__(self, pt_features, labels):
+        raise NotImplementedError
+
+
+class PointExtendChannel(DataPipelineBaseClass):
+    RETURN_TYPE = "Point"
+
+    def __init__(self, config):
+        super().__init__()
+        self.extend_channels = config["extend_channels"]
+
+    @classmethod
+    def gen_config_template(cls):
+        config = {
+            "dist": True,
+            "pitch": True,
+            "yaw": False,
+        }
+        return config
+
+    def __call__(self, pt_features, labels):
+        data = pt_features
+        xyz_sphere = cart2spherical(pt_features)
+        if self.extend_channels["dist"]:
+            data = np.concatenate([pt_features, np.linalg.norm(pt_features[..., :2], axis=1, keepdims=True)], axis=1)
+        if self.extend_channels["pitch"]:
+            data = np.concatenate([data, xyz_sphere[..., 2]], axis=1)
+        if self.extend_channels["yaw"]:
+            data = np.concatenate([data, xyz_sphere[..., 1]], axis=1)
+        return {"Point": data}
+
+
 @DataPipelineBuilder.register
 class PointAugmentor(DataPipelineBaseClass):
     """Point Augmentor, which include rotate, jitter, scale and flip """
@@ -145,16 +177,16 @@ class InsAugPointAugmentor(DataPipelineBaseClass):  # TODO: Complete this class
             "ins_aug_num": cls.default_str + ", list type"
         }
 
-    def __call__(self, pt_features):
+    def __call__(self, pt_features, labels):
         raise NotImplementedError
 
 
 @DataPipelineBuilder.register
-class Voxelize(PFBaseClass):
+class Voxel(PFBaseClass):
     RETURN_TYPE = "Voxel"
 
     def __init__(self, config):
-        super(Voxelize, self).__init__()
+        super(Voxel, self).__init__()
         self.voxel_size = config["voxel_size"]
         self.fixed_volume_space = config["fixed_volume_space"]  # {inuse, max, min}
         self.max_voxel_num = config["max_voxel_num"]
@@ -172,17 +204,20 @@ class Voxelize(PFBaseClass):
 
     def __call__(self, pt_features, labels):
         coords = pt_features[..., :3]
+        min_bound = np.min(coords, axis=0) // self.voxel_size
+        if self.fixed_volume_space["inuse"]:
+            coords = np.clip(coords,
+                             self.fixed_volume_space["min_volume_space"],
+                             self.fixed_volume_space["max_volume_space"])
+            min_bound = np.array(self.fixed_volume_space["min_volume_space"]) // self.voxel_size
         coords_pol = cart2polar(coords)
 
-        vox_coords, p2v_indices, v2p_indices = sparse_quantize(coords,
+        voxel_idx, v2p_indices, p2v_indices = sparse_quantize(coords,
                                                                voxel_size=self.voxel_size,
                                                                return_index=True,
                                                                return_inverse=True)
-        if self.fixed_volume_space["inuse"]:
-            vox_coords = np.clip(vox_coords,
-                                 self.fixed_volume_space["min_volume_space"],
-                                 self.fixed_volume_space["max_volume_space"])
-        vox_centers = vox_coords + self.voxel_size / 2
+
+        vox_centers = voxel_idx * self.voxel_size + self.voxel_size / 2 + min_bound
         return_xyz = coords - vox_centers[v2p_indices]
         return_xyz = np.concatenate([return_xyz, coords_pol, coords[..., :2]], axis=-1)
 
@@ -190,16 +225,22 @@ class Voxelize(PFBaseClass):
             return_fea = return_xyz
         else:
             return_fea = np.concatenate((return_xyz, pt_features[:, 3:]), axis=-1)
+        return_fea = torch.tensor(return_fea, dtype=torch.float32)
+        point_feats_st = SparseTensor(feats=return_fea, coords=voxel_idx)
 
-        return {"Voxel": [return_fea, vox_coords, p2v_indices, v2p_indices]}
+        return {"Voxel": {
+            "point_feats_st": point_feats_st,
+            "p2v_indices_list": p2v_indices,
+            "v2p_indices_list": v2p_indices,
+        }}
 
 
 @DataPipelineBuilder.register
-class CylinderVoxelize(PFBaseClass):
-    RETURN_TYPE="Voxel"
+class Cylindrical(PFBaseClass):
+    RETURN_TYPE = "Voxel"
 
     def __init__(self, config):
-        super(CylinderVoxelize, self).__init__()
+        super(Cylindrical, self).__init__()
         self.voxel_size = config["voxel_size"]
         self.fixed_volume_space = config["fixed_volume_space"]
         self.grid_shape = config["grid_shape"]
@@ -216,7 +257,7 @@ class CylinderVoxelize(PFBaseClass):
         }
 
     def __call__(self, pt_features, labels):
-        """return's return_fea is (regression_xyz, xyz_pol, xy, intensity)"""
+        """return: point_features, voxel_start_coords, p2v, v2p"""
         xyz = pt_features[..., :3]
         xyz_pol = cart2polar(xyz)
         max_bound_r = np.percentile(xyz_pol[..., 0], 100, axis=-2)
@@ -228,27 +269,52 @@ class CylinderVoxelize(PFBaseClass):
         if self.fixed_volume_space["inuse"]:
             max_bound = np.asarray(self.fixed_volume_space["max_volume_space"])
             min_bound = np.asarray(self.fixed_volume_space["min_volume_space"])
+            xyz_pol = np.clip(xyz_pol, min_bound, max_bound)
+            xyz = polar2cart(xyz_pol)
         # get grid index
         crop_range = max_bound - min_bound
         grid_size = crop_range / self.grid_shape
         if (grid_size == 0).any():
             print("Zero interval!")
-        voxel_coords_pol, p2v_indices, v2p_indices = sparse_quantize(xyz_pol, grid_size,
-                                                                     return_index=True,
-                                                                     return_inverse=True)
-        voxel_coords = polar2cart(voxel_coords_pol)
+        voxel_idx, v2p_indices, p2v_indices = sparse_quantize(
+            xyz_pol-min_bound, grid_size, return_index=True, return_inverse=True
+        )
 
+        voxel_coords_pol = voxel_idx * grid_size + min_bound
         # center data on each voxel for PTnet
-        voxel_centers = voxel_coords + min_bound
-        return_xyz = xyz_pol - voxel_centers
-        return_xyz = np.concatenate((return_xyz, xyz_pol, xyz[..., :2]), axis=-1)
+        voxel_centers_pol = voxel_coords_pol + 0.5 * grid_size
+
+        return_xyz = xyz_pol - voxel_centers_pol[v2p_indices]
+        # maybe not use regression xy
+        # return_xyz = np.concatenate([
+        #         return_xyz,
+        #         xyz[..., :2]-polar2cart(voxel_centers_pol)[..., :2][v2p_indices]
+        #     ], axis=-1)
+        return_xyz = np.concatenate((xyz, xyz_pol[..., :2], return_xyz), axis=-1)
 
         if pt_features.shape[1] == 3:
             return_fea = return_xyz
         else:
             return_fea = np.concatenate((return_xyz, pt_features[:, 3:]), axis=-1)
 
-        return {"Voxel": [return_fea, voxel_coords, p2v_indices, v2p_indices]}
+        point_feats_st = SparseTensor(
+            feats=torch.tensor(return_fea, dtype=torch.float32),
+            coords=voxel_idx[v2p_indices]
+        )
+        voxel_feats_st = SparseTensor(
+            feats=torch.tensor(return_fea[p2v_indices], dtype=torch.float32),
+            coords=voxel_idx
+        )
+
+        return {"Voxel": {
+            "point_feats_st": point_feats_st,
+            "voxel_feats_st": voxel_feats_st,
+            "p2v_indices_list": p2v_indices,
+            "v2p_indices_list": v2p_indices,
+        }}
+
+    def draw(self, data):
+        pass
 
 
 @DataPipelineBuilder.register
@@ -312,7 +378,12 @@ class RangeProject(DataPipelineBaseClass):
         range_mask = np.zeros((self.proj_H, self.proj_W), dtype=np.int32)
         range_mask[proj_y, proj_x] = 1
 
-        return {"Range": [range_image, range_mask, p2r_indices, r2p_indices]}
+        return {"Range": {
+                "range_image_ten": range_image,
+                "range_mask_ten": range_mask,
+                "p2r_indices_list": p2r_indices,
+                "r2p_indices_ten": r2p_indices,
+            }}
 
 
 @DataPipelineBuilder.register
@@ -337,7 +408,6 @@ class PolarBevProject(DataPipelineBaseClass):  # TODO: complete this
 
     def __init__(self, config):
         super(PolarBevProject, self).__init__()
-
 
     @classmethod
     def gen_config_template(cls):

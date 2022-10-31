@@ -1,7 +1,10 @@
 import os
 import numba as nb
+import torch
 from numba import jit
 import numpy as np
+from torchsparse import SparseTensor
+from torchsparse.utils.collate import sparse_collate
 
 
 class SemKittiUtils:
@@ -111,8 +114,28 @@ def nb_process_label(processed_label, sorted_label_voxel_pair):
     return processed_label
 
 
-def custom_collate_fn(batch):  # TODO: complete collate function
+def custom_collate_fn(inputs):  # TODO: complete collate function
     """Custom collate function to deal with batches that have different
     numbers of samples per gpu.
     """
-    raise NotImplementedError
+    if isinstance(inputs[0], dict):
+        output = {}
+        for name in inputs[0].keys():
+            if isinstance(inputs[0][name], dict):
+                output[name] = custom_collate_fn(
+                    [input[name] for input in inputs])
+            elif "list" in name or "Point" == name or "Label" == name:
+                output[name] = [input[name] for input in inputs]
+            elif isinstance(inputs[0][name], np.ndarray):
+                output[name] = torch.stack(
+                    [torch.tensor(input[name]) for input in inputs], dim=0)
+            elif isinstance(inputs[0][name], torch.Tensor):
+                output[name] = torch.stack([input[name] for input in inputs],
+                                           dim=0)
+            elif isinstance(inputs[0][name], SparseTensor):
+                output[name] = sparse_collate([input[name] for input in inputs])
+            else:
+                output[name] = [input[name] for input in inputs]
+        return output
+    else:
+        return inputs
