@@ -213,9 +213,9 @@ class Voxel(PFBaseClass):
         coords_pol = cart2polar(coords)
 
         voxel_idx, v2p_indices, p2v_indices = sparse_quantize(coords,
-                                                               voxel_size=self.voxel_size,
-                                                               return_index=True,
-                                                               return_inverse=True)
+                                                              voxel_size=self.voxel_size,
+                                                              return_index=True,
+                                                              return_inverse=True)
 
         vox_centers = voxel_idx * self.voxel_size + self.voxel_size / 2 + min_bound
         return_xyz = coords - vox_centers[v2p_indices]
@@ -277,7 +277,7 @@ class Cylindrical(PFBaseClass):
         if (grid_size == 0).any():
             print("Zero interval!")
         voxel_idx, v2p_indices, p2v_indices = sparse_quantize(
-            xyz_pol-min_bound, grid_size, return_index=True, return_inverse=True
+            xyz_pol - min_bound, grid_size, return_index=True, return_inverse=True
         )
 
         voxel_coords_pol = voxel_idx * grid_size + min_bound
@@ -379,11 +379,11 @@ class RangeProject(DataPipelineBaseClass):
         range_mask[proj_y, proj_x] = 1
 
         return {"Range": {
-                "range_image_ten": range_image,
-                "range_mask_ten": range_mask,
-                "p2r_indices_list": p2r_indices,
-                "r2p_indices_ten": r2p_indices,
-            }}
+            "range_image_ten": range_image,
+            "range_mask_ten": range_mask,
+            "p2r_indices_list": p2r_indices,
+            "r2p_indices_ten": r2p_indices,
+        }}
 
 
 @DataPipelineBuilder.register
@@ -398,7 +398,6 @@ class BevProject(DataPipelineBaseClass):  # TODO: complete this
         return {}
 
     def __call__(self, pt_features, labels):
-
         return {"Bev": pt_features[..., 1:3]}
 
 

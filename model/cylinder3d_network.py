@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchsparse import SparseTensor
 
 from utils.pf_base_class import PFBaseClass
 
@@ -41,8 +42,11 @@ class CylinderPointMLP(nn.Module):
 
     def forward(self, point_feats_st, p2v_indices):
         # process feature
-        processed_cat_pt_fea = self.mlp(point_feats_st.F)
+        processed_pt_feats = self.mlp(point_feats_st.F)
+        vox_feats_st = SparseTensor(
+            feats=processed_pt_feats[p2v_indices],
+            coords=point_feats_st.C[p2v_indices]
+        )
 
-
-        return unq, processed_pooled_data
+        return vox_feats_st
 
