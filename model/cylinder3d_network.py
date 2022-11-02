@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torchsparse import SparseTensor
 
-from utils.pf_base_class import PFBaseClass
 
 def point_mlp(fea_in, fea_out):
     mlp = nn.Sequential(
@@ -16,37 +14,64 @@ def point_mlp(fea_in, fea_out):
 
 class CylinderPointMLP(nn.Module):
     def __init__(
-            self, grid_size,
+            self,
             in_fea_dim=3,
             mlp_channels=None,
             out_pt_fea_dim=64,
-            max_pt_per_encoder=64
+            fea_compre=None,
     ):
         super(CylinderPointMLP, self).__init__()
 
         if mlp_channels is None:
             mlp_channels = [in_fea_dim, 64, 128, 256, 64]
 
-        self.mlp = nn.Sequential(nn.BatchNorm1d(mlp_channels[0]))
-        for i in range(len(mlp_channels) - 1):
-            self.mlp.add_module(
-                f"point_mlp_{i}",
-                point_mlp(mlp_channels[i], mlp_channels[i + 1])
-            )
-        self.mlp.add_module("linear", nn.Linear(mlp_channels[-1], out_pt_fea_dim))
+        self.bn0 = nn.BatchNorm1d(mlp_channels[0])
+        self.mlp = nn.ModuleList([
+            point_mlp(mlp_channels[i], mlp_channels[i+1]) for i in range(len(mlp_channels)-1)
+        ])
+        self.gen_feats = nn.Linear(mlp_channels[-1], out_pt_fea_dim)
 
-        self.max_pt = max_pt_per_encoder
-        self.grid_size = grid_size
-        self.local_pool_op = torch.nn.MaxPool2d(kernel_size=3, stride=1,
-                                                padding=1, dilation=1)
+        if self.fea_compre is not None:
+            self.fea_compression = nn.Sequential(
+                nn.Linear(out_pt_fea_dim, self.fea_compre),
+                nn.ReLU()
+            )
 
     def forward(self, point_feats_st, p2v_indices):
         # process feature
-        processed_pt_feats = self.mlp(point_feats_st.F)
+        processed_pt_feats = self.bn0(point_feats_st.feats)
+        skip_pt_feats = []
+        for module in self.mlp:
+            processed_pt_feats = module(processed_pt_feats)
+            skip_pt_feats.append(processed_pt_feats)
+
+        if self.fea_compre is not None:
+            processed_pt_feats = self.fea_compression(processed_pt_feats)
+
         vox_feats_st = SparseTensor(
             feats=processed_pt_feats[p2v_indices],
             coords=point_feats_st.C[p2v_indices]
         )
+        return vox_feats_st, skip_pt_feats
 
-        return vox_feats_st
 
+class PointWiseRefinement(nn.Module):
+    def __init__(self, init_size, mlp_channels=None, num_classes=20):
+        super(PointWiseRefinement, self).__init__()
+        if mlp_channels is None:
+            mlp_channels = [64, 128, 256, 64]
+        else:
+            mlp_channels.pop(0)
+        mlp1 = point_mlp(4*init_size+mlp_channels[0], 8*init_size)
+        mlp2 = point_mlp(8*init_size+mlp_channels[1], 4*init_size)
+        mlp3 = point_mlp(4*init_size+mlp_channels[2], 2*init_size)
+        mlp4 = point_mlp(2*init_size+mlp_channels[3], init_size)
+        self.mlp = nn.ModuleList([mlp1, mlp2, mlp3, mlp4])
+        self.gen_logits = nn.Linear(init_size, num_classes, bias=True)
+
+    def forward(self, pt_feats, skip_pt_feats):
+        for skip, mlp_module in zip(reversed(skip_pt_feats), self.mlp):
+            pt_feats = torch.cat((pt_feats, skip))
+            pt_feats = mlp_module(pt_feats)
+        logits = self.gen_logits(pt_feats)
+        return logits

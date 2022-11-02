@@ -6,6 +6,20 @@ import torch
 from torch import nn
 
 
+class SpnnSigmoid(nn.Sigmoid):
+
+    def forward(self, input: SparseTensor) -> SparseTensor:
+        return fapply(input, super().forward)
+
+
+def conv_block(conv_func, act_func, in_channels, out_channels, stride=1):
+    return nn.Sequential(
+        conv_func(in_channels, out_channels, stride=stride),
+        spnn.BatchNorm(out_channels),
+        act_func()
+    )
+
+
 def conv3x3x3(in_channels, out_channels, stride=1):
     return spnn.Conv3d(in_channels, out_channels, kernel_size=3, stride=stride, bias=False)
 
@@ -32,20 +46,6 @@ def conv3x1x3(in_planes, out_planes, stride=1):
 
 def conv1x1x1(in_planes, out_planes, stride=1):
     return spnn.Conv3d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
-
-
-class SpnnSigmoid(nn.Sigmoid):
-
-    def forward(self, input: SparseTensor) -> SparseTensor:
-        return fapply(input, super().forward)
-
-
-def conv_block(conv_func, act_func, in_channels, out_channels, stride=1):
-    return nn.Sequential(
-        conv_func(in_channels, out_channels, stride=stride),
-        spnn.BatchNorm(out_channels),
-        act_func()
-    )
 
 
 class ResBlock(nn.Module):
@@ -114,10 +114,9 @@ class DDCM(nn.Module):
 
 
 class Asymm_3d_spconv(nn.Module):
-    def __init__(self, output_shape, num_input_feats=128, num_classes=20, init_size=16):
+    def __init__(self, num_input_feats=128, num_classes=20, init_size=16):
         super(Asymm_3d_spconv, self).__init__()
         self.num_classes = num_classes
-        self.sparse_shape = np.array(output_shape)
 
         self.init_block = ResBlock(num_input_feats, init_size, pooling=False)
         self.resBlock1 = ResBlock(init_size, 2*init_size, pooling=True, height_pooling=True)
@@ -131,7 +130,7 @@ class Asymm_3d_spconv(nn.Module):
         self.upBlock1 = UpBlock(4 * init_size, 2 * init_size)
 
         self.DDCM = DDCM(2*init_size, 2*init_size)
-        self.logits = spnn.Conv3d(4*init_size, num_classes, kernel_size=3, stride=1, bias=True)
+        self.conv_logits = spnn.Conv3d(4*init_size, num_classes, kernel_size=3, stride=1, bias=True)
 
     def forward(self, voxel_feats_st):
         ret = self.init_block(voxel_feats_st)
@@ -146,8 +145,8 @@ class Asymm_3d_spconv(nn.Module):
         up1e = self.upBlock1(up2e, down1b)
 
         up0e = self.DDCM(up1e)
-        up0e.feats = torch.cat((up0e.feats, up1e.feats), 1)
+        up0e.feats = torch.cat((up0e.feats, up1e.feats), 1)  # 4*init_size
 
-        logits = self.logits(up0e)
-        return logits
+        logits = self.conv_logits(up0e)
+        return logits, up0e
 

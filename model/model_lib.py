@@ -1,8 +1,8 @@
 from torch import nn
 
 from utils.pf_base_class import PFBaseClass
-from model.segmentator_3d_asymm_spconv import Asymm_3d_spconv
-from model.cylinder_fea_generator import cylinder_fea
+from model.cylinder3d_network import CylinderPointMLP, PointWiseRefinement
+from model.segmentator_3d_asymm_torchsparse import Asymm_3d_spconv
 
 
 class ModelLibrary(PFBaseClass):
@@ -36,9 +36,9 @@ class Cylinder3D(ModuleBaseClass):
     @classmethod
     def gen_config_template(cls):
         config = {
-            "name": cls.__name__,
+            "point_wise_refinement": True
             "output_shape": [480, 360, 32],
-            "feature_dim": 9,
+            "in_fea_dim": 9,
             "num_input_features": 16,
             "num_classes": 20,
             "use_norm": True,
@@ -50,26 +50,31 @@ class Cylinder3D(ModuleBaseClass):
     def __init__(self, model_config):
         super().__init__()
         self.name = "Cylinder3D"
-        self.cylinder_3d_generator = cylinder_fea(
-            grid_size=model_config["output_shape"],
-            fea_dim=model_config["fea_dim,"],
-            out_pt_fea_dim=model_config["out_fea_dim"],
-            fea_compre=model_config["num_input_features"]
+        self.point_wise_refinement = model_config["point_wise_refinement"]
+        self.cylinder_3d_generator = CylinderPointMLP(
+            in_fea_dim=model_config["in_fea_dim"],
+            mlp_channels=model_config["mlp_channels"],
+            out_pt_fea_dim=model_config["out_fea_dim"]
         )
         self.cylinder_3d_spconv_seg = Asymm_3d_spconv(
-            output_shape=model_config["output_shape"],
-            use_norm=model_config["use_norm"],
-            num_input_features=model_config["num_input_features"],
+            num_input_feats=model_config["num_input_features"],
             init_size=model_config["init_size"],
-            nclasses=model_config["num_classes"]
+            num_classes=model_config["num_classes"]
+        )
+        self.cylinder_3d_generate_logits = PointWiseRefinement(
+            init_size=model_config["init_size"],
+            mlp_channels=model_config["mlp_channels"],
+            num_classes=model_config["num_classes"]
         )
 
-        self.sparse_shape = model_config["output_shape"]
-
     def forward(self, data):
+        voxel_feats_st, skip_pt_feats = self.cylinder_3d_generator(data["point_feats_st"], data["p2v_indices"])
 
-        coords, features_3d = self.cylinder_3d_generator(train_pt_fea_ten, train_vox_ten)
+        voxel_logits_st, voxel_feats_st = self.cylinder_3d_spconv_seg(voxel_feats_st)
 
-        spatial_features = self.cylinder_3d_spconv_seg(features_3d, coords, batch_size)
+        if self.point_wise_refinement:
+            logits = self.cylinder_3d_generate_logits(voxel_feats_st.F[data["v2p_indices"]], skip_pt_feats)
+        else:
+            logits = voxel_logits_st.F[data["v2p_indices"]]
 
-        return spatial_features
+        return logits, voxel_logits_st

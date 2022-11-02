@@ -1,10 +1,10 @@
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 
-from utils.dataloader import DatasetBuilder
-from utils.data_pipeline import DataPipelineBuilder
+from dataloader.dataloader import DatasetBuilder
+from dataloader.data_pipeline import DataPipelineBuilder
 from utils.pf_base_class import PFBaseClass
-from utils.data_utils import custom_collate_fn
+from dataloader.data_utils import custom_collate_fn
 from model.model_lib import ModelLibrary
 
 

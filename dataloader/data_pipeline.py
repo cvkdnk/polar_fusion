@@ -4,7 +4,7 @@ from torchsparse import SparseTensor
 from torchsparse.utils.quantize import sparse_quantize
 
 from utils.pf_base_class import PFBaseClass
-from utils.data_utils import cart2polar, polar2cart, cart2spherical, spherical2cart
+from dataloader.data_utils import cart2polar, polar2cart, cart2spherical
 
 
 class DataPipelineBuilder(PFBaseClass):
@@ -212,12 +212,12 @@ class Voxel(PFBaseClass):
             min_bound = np.array(self.fixed_volume_space["min_volume_space"]) // self.voxel_size
         coords_pol = cart2polar(coords)
 
-        voxel_idx, v2p_indices, p2v_indices = sparse_quantize(coords,
+        voxel_coords, p2v_indices, v2p_indices = sparse_quantize(coords,
                                                               voxel_size=self.voxel_size,
                                                               return_index=True,
                                                               return_inverse=True)
 
-        vox_centers = voxel_idx * self.voxel_size + self.voxel_size / 2 + min_bound
+        vox_centers = voxel_coords * self.voxel_size + self.voxel_size / 2 + min_bound
         return_xyz = coords - vox_centers[v2p_indices]
         return_xyz = np.concatenate([return_xyz, coords_pol, coords[..., :2]], axis=-1)
 
@@ -226,7 +226,7 @@ class Voxel(PFBaseClass):
         else:
             return_fea = np.concatenate((return_xyz, pt_features[:, 3:]), axis=-1)
         return_fea = torch.tensor(return_fea, dtype=torch.float32)
-        point_feats_st = SparseTensor(feats=return_fea, coords=voxel_idx)
+        point_feats_st = SparseTensor(feats=return_fea, coords=voxel_coords)
 
         return {"Voxel": {
             "point_feats_st": point_feats_st,
@@ -276,11 +276,11 @@ class Cylindrical(PFBaseClass):
         grid_size = crop_range / self.grid_shape
         if (grid_size == 0).any():
             print("Zero interval!")
-        voxel_idx, v2p_indices, p2v_indices = sparse_quantize(
+        voxel_coords, p2v_indices, v2p_indices = sparse_quantize(
             xyz_pol - min_bound, grid_size, return_index=True, return_inverse=True
         )
 
-        voxel_coords_pol = voxel_idx * grid_size + min_bound
+        voxel_coords_pol = voxel_coords * grid_size + min_bound
         # center data on each voxel for PTnet
         voxel_centers_pol = voxel_coords_pol + 0.5 * grid_size
 
@@ -299,11 +299,11 @@ class Cylindrical(PFBaseClass):
 
         point_feats_st = SparseTensor(
             feats=torch.tensor(return_fea, dtype=torch.float32),
-            coords=voxel_idx[v2p_indices]
+            coords=voxel_coords[v2p_indices]
         )
         voxel_feats_st = SparseTensor(
             feats=torch.tensor(return_fea[p2v_indices], dtype=torch.float32),
-            coords=voxel_idx
+            coords=voxel_coords
         )
 
         return {"Voxel": {
