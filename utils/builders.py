@@ -1,8 +1,7 @@
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 
-from dataloader.dataloader import DatasetBuilder
-from dataloader.data_pipeline import DataPipelineBuilder
+from dataloader import DatasetLibrary, DataPipelineLibrary
 from utils.pf_base_class import PFBaseClass
 from dataloader.data_utils import custom_collate_fn
 from model.model_lib import ModelLibrary
@@ -12,11 +11,11 @@ class DataBuilders(PFBaseClass):
     @classmethod
     def gen_config_template(cls, dataset_name=None, data_pipeline=None):
         return {
-            "dataset": DatasetBuilder.gen_config_template(dataset_name),
+            "dataset": DatasetLibrary.gen_config_template(dataset_name),
             "pipeline": {
-                "train": {dp: DataPipelineBuilder.gen_config_template(dp) for dp in data_pipeline["train"]},
-                "val": {dp: DataPipelineBuilder.gen_config_template(dp) for dp in data_pipeline["val"]},
-                "test": {dp: DataPipelineBuilder.gen_config_template(dp) for dp in data_pipeline["test"]}
+                "train": {dp: DataPipelineLibrary.gen_config_template(dp) for dp in data_pipeline["train"]},
+                "val": {dp: DataPipelineLibrary.gen_config_template(dp) for dp in data_pipeline["val"]},
+                "test": {dp: DataPipelineLibrary.gen_config_template(dp) for dp in data_pipeline["test"]}
             },
             "dataloader": {
                 "train": {"batch_size": 4, "shuffle": True, "num_workers": 4, "pin_memory": True, "drop_last": False},
@@ -30,11 +29,11 @@ class DataBuilders(PFBaseClass):
         self.data_pipeline = data_pipeline
 
     def __call__(self, dataset_config, dataloader_config):
-        dataflow = DatasetBuilder.get_dataflow(self.dataset_name, dataset_config)
+        dataflow = DatasetLibrary.get_dataflow(self.dataset_name, dataset_config)
 
         class DataPipeline(Dataset):
             def __init__(self, dataset, data_pipeline_list, data_pipeline_config):
-                self.data_pipeline = [DataPipelineBuilder.get_pipeline(dp, data_pipeline_config[dp])
+                self.data_pipeline = [DataPipelineLibrary.get_pipeline(dp, data_pipeline_config[dp])
                                       for dp in data_pipeline_list]
                 self.dataset = dataset
 

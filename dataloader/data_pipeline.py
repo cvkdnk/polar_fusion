@@ -7,7 +7,7 @@ from utils.pf_base_class import PFBaseClass
 from dataloader.data_utils import cart2polar, polar2cart, cart2spherical
 
 
-class DataPipelineBuilder(PFBaseClass):
+class DataPipelineLibrary(PFBaseClass):
     PIPELINE = {}
 
     @classmethod
@@ -21,7 +21,7 @@ class DataPipelineBuilder(PFBaseClass):
 
     @staticmethod
     def register(pipeline_class):
-        DataPipelineBuilder.PIPELINE[pipeline_class.__name__] = pipeline_class
+        DataPipelineLibrary.PIPELINE[pipeline_class.__name__] = pipeline_class
         return pipeline_class
 
 
@@ -68,7 +68,7 @@ class PointExtendChannel(DataPipelineBaseClass):
         return {"Point": data}
 
 
-@DataPipelineBuilder.register
+@DataPipelineLibrary.register
 class PointAugmentor(DataPipelineBaseClass):
     """Point Augmentor, which include rotate, jitter, scale and flip """
     RETURN_TYPE = "Point"
@@ -157,7 +157,7 @@ class PointAugmentor(DataPipelineBaseClass):
         return flipped_points
 
 
-@DataPipelineBuilder.register
+@DataPipelineLibrary.register
 class InsAugPointAugmentor(DataPipelineBaseClass):  # TODO: Complete this class
     RETURN_TYPE = "Point"
 
@@ -181,7 +181,7 @@ class InsAugPointAugmentor(DataPipelineBaseClass):  # TODO: Complete this class
         raise NotImplementedError
 
 
-@DataPipelineBuilder.register
+@DataPipelineLibrary.register
 class Voxel(PFBaseClass):
     RETURN_TYPE = "Voxel"
 
@@ -235,7 +235,7 @@ class Voxel(PFBaseClass):
         }}
 
 
-@DataPipelineBuilder.register
+@DataPipelineLibrary.register
 class Cylindrical(PFBaseClass):
     RETURN_TYPE = "Voxel"
 
@@ -317,7 +317,7 @@ class Cylindrical(PFBaseClass):
         pass
 
 
-@DataPipelineBuilder.register
+@DataPipelineLibrary.register
 class RangeProject(DataPipelineBaseClass):
     RETURN_TYPE = "Range"
 
@@ -386,7 +386,7 @@ class RangeProject(DataPipelineBaseClass):
         }}
 
 
-@DataPipelineBuilder.register
+@DataPipelineLibrary.register
 class BevProject(DataPipelineBaseClass):  # TODO: complete this
     RETURN_TYPE = "Bev"
 
@@ -401,7 +401,7 @@ class BevProject(DataPipelineBaseClass):  # TODO: complete this
         return {"Bev": pt_features[..., 1:3]}
 
 
-@DataPipelineBuilder.register
+@DataPipelineLibrary.register
 class PolarBevProject(DataPipelineBaseClass):  # TODO: complete this
     RETURN_TYPE = "Bev"
 

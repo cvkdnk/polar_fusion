@@ -25,6 +25,7 @@ class ModelLibrary(PFBaseClass):
 class ModuleBaseClass(nn.Module):
     """same as PFBaseClass"""
     default_str = "Need To Be Completed ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++"
+    NEED_TYPE = None
 
     @classmethod
     def gen_config_template(cls):
@@ -33,10 +34,11 @@ class ModuleBaseClass(nn.Module):
 
 @ModelLibrary.register
 class Cylinder3D(ModuleBaseClass):
+    NEED_TYPE = "Point,Voxel"
     @classmethod
     def gen_config_template(cls):
         config = {
-            "point_wise_refinement": True
+            "point_wise_refinement": True,
             "output_shape": [480, 360, 32],
             "in_fea_dim": 9,
             "num_input_features": 16,

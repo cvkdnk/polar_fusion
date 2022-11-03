@@ -5,7 +5,7 @@ from dataloader.data_utils import SemKittiUtils, label_mapping
 from utils.pf_base_class import PFBaseClass
 
 
-class DatasetBuilder(PFBaseClass):
+class DatasetLibrary(PFBaseClass):
     DATASET = {}
 
     @classmethod
@@ -24,7 +24,7 @@ class DatasetBuilder(PFBaseClass):
 
     @staticmethod
     def register(dataset_class):
-        DatasetBuilder.DATASET[dataset_class.__name__] = dataset_class
+        DatasetLibrary.DATASET[dataset_class.__name__] = dataset_class
         return dataset_class
 
 
@@ -66,7 +66,7 @@ class BaseDataset(PFBaseClass):
         return mean, std, proportion
 
 
-@DatasetBuilder.register
+@DatasetLibrary.register
 class SemanticKITTI(BaseDataset):
     test_config = {
         'data_root': '/data/semantickitti/sequences',
@@ -121,7 +121,7 @@ class SemanticKITTI(BaseDataset):
         return cfg_struct
 
 
-@DatasetBuilder.register
+@DatasetLibrary.register
 class NuScenes(BaseDataset): # TODO: complete nuscenes dataset
     def __init__(self):
         super().__init__()
