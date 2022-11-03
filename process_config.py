@@ -7,6 +7,9 @@ from model import ModelLibrary
 from utils import PFBaseClass
 
 
+DATA_ROOT = None
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Process config yaml files")
     parser.add_argument("--gen_from_base", "-g", action="store_true", help="Generate config files from base.yaml")
@@ -15,11 +18,11 @@ def parse_args():
 
 
 def update_base_config():
-    assert DatasetLibrary.DATASET, "ERROR, ./dataloader/dataloader.py/DatasetLibrary.DATASET " + \
+    assert DatasetLibrary.DATASET, "ERROR, ./dataloader/dataloader.py -> DatasetLibrary.DATASET " + \
                                    "is EMPTY, need to register dataset first"
-    assert DataPipelineLibrary.PIPELINE, "ERROR, ./dataloader/data_pipeline.py/DataPipelineLibrary.PIPELINE " + \
+    assert DataPipelineLibrary.PIPELINE, "ERROR, ./dataloader/data_pipeline.py -> DataPipelineLibrary.PIPELINE " + \
                                          "is EMPTY, need to register data pipeline first"
-    assert ModelLibrary.MODEL, "ERROR, ./model/model_lib.py/ModelLibrary.MODEL " + \
+    assert ModelLibrary.MODEL, "ERROR, ./model/model_lib.py -> ModelLibrary.MODEL " + \
                                "is EMPTY, need to register model first"
 
     with open("./config/base.yaml", 'w', encoding='utf-8') as f:
@@ -33,7 +36,8 @@ def update_base_config():
         f.write("Dataset: SemanticKITTI\n\n")
         for strline in yield_line_every5(DataPipelineLibrary.PIPELINE.keys()):
             f.write(strline)
-        f.write("DataPipeline:\n  - PointAugmentor\n\n")
+        f.write("DataPipeline:\n")
+        f.write("  - PointAugmentor\n\n")
         for strline in yield_line_every5(ModelLibrary.MODEL.keys()):
             f.write(strline)
         f.write("Model: Cylinder3D\n\n")
@@ -89,6 +93,7 @@ def gen_from_base():
     os.makedirs(work_path + "/data_pipeline")
     os.makedirs(work_path + "/model")
     dataset_config = DatasetLibrary.DATASET[base_config["Dataset"]].gen_config_template()
+    dataset_config["data_root"] = DATA_ROOT if DATA_ROOT is not None
     scan_config(dataset_config, "Dataset")
     with open(work_path + "/dataset/" + base_config["Dataset"] + ".yaml", 'w') as f:
         yaml.dump(dataset_config, f)
