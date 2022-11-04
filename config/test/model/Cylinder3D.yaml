@@ -1,0 +1,11 @@
+in_fea_dim: 9
+init_size: 32
+num_classes: 20
+num_input_features: 16
+out_fea_dim: 256
+output_shape:
+- 480
+- 360
+- 32
+point_wise_refinement: true
+use_norm: true

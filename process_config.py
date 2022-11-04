@@ -7,13 +7,14 @@ from model import ModelLibrary
 from utils import PFBaseClass
 
 
-DATA_ROOT = None
+DATA_ROOT = "/data/semkitti/sequences/"
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Process config yaml files")
     parser.add_argument("--gen_from_base", "-g", action="store_true", help="Generate config files from base.yaml")
     parser.add_argument("--update", "-u", action="store_true", help="Update base config file")
+    parser.add_argument("--force", "-f", action="store_true", help="Cover the existed config directory")
     return parser.parse_args()
 
 
@@ -63,12 +64,12 @@ def yield_line_every5(l):
         if idx % 5 == 0 and idx != 0:
             yield str_line + "\n"
             str_line = "#"
-        str_line += f" {l_i}"
-    yield str_line
+        str_line += f" [{l_i}]"
+    yield str_line + "\n"
 
 
 def scan_config(config, cfg_type):
-    for k, v in config.item():
+    for k, v in config.items():
         if v == PFBaseClass.default_str:
             print(cfg_type, k, "is not set.")
 
@@ -80,18 +81,15 @@ def gen_from_base():
         print("Need to complete the base config file and run [python process_config.py -b] again.")
     with open("./config/base.yaml", 'r') as f:
         base_config = yaml.load(f, Loader=yaml.FullLoader)
-    if os.path.exists(base_config["Dirname"]):
-        print("ERROR, the directory to store configs is already exist.")
-        return
-    os.makedirs(base_config["Dirname"])
-    work_path = os.path.join(os.path.join(os.getcwd(), "config", base_config["Dirname"]))
+    work_path = os.path.join(os.path.join("./config", base_config["Dirname"]))
+    os.makedirs(work_path, exist_ok=args.force)
     shutil.copy(
         "./config/base.yaml",
         os.path.join(work_path, "base.yaml")
     )
-    os.makedirs(work_path + "/dataset")
-    os.makedirs(work_path + "/data_pipeline")
-    os.makedirs(work_path + "/model")
+    os.makedirs(work_path + "/dataset", exist_ok=args.force)
+    os.makedirs(work_path + "/data_pipeline", exist_ok=args.force)
+    os.makedirs(work_path + "/model", exist_ok=args.force)
     dataset_config = DatasetLibrary.DATASET[base_config["Dataset"]].gen_config_template()
     if DATA_ROOT is not None:
         dataset_config["data_root"] = DATA_ROOT
@@ -116,3 +114,6 @@ def main(args):
     if args.update:
         update_base_config()
 
+if __name__ == "__main__":
+    args = parse_args()
+    main(args)

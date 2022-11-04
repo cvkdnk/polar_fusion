@@ -1,0 +1,3 @@
+data_root: /data/semkitti/sequences/
+kitti_yaml: ./config/semantic-kitti.yaml
+return_rem: true

@@ -1,0 +1,4 @@
+proj_H: 64
+proj_W: 1024
+proj_fov_down: -25
+proj_fov_up: 3
