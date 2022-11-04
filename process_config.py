@@ -93,7 +93,8 @@ def gen_from_base():
     os.makedirs(work_path + "/data_pipeline")
     os.makedirs(work_path + "/model")
     dataset_config = DatasetLibrary.DATASET[base_config["Dataset"]].gen_config_template()
-    dataset_config["data_root"] = DATA_ROOT if DATA_ROOT is not None
+    if DATA_ROOT is not None:
+        dataset_config["data_root"] = DATA_ROOT
     scan_config(dataset_config, "Dataset")
     with open(work_path + "/dataset/" + base_config["Dataset"] + ".yaml", 'w') as f:
         yaml.dump(dataset_config, f)
