@@ -3,14 +3,14 @@ from torch import optim, nn, utils, Tensor
 from torchvision.datasets import MNIST
 from torchvision.transforms import ToTensor
 import pytorch_lightning as pl
-from utils.builders import DataBuilders, ModelBuilder
+from utils.builders import DataBuilder, ModelBuilder
 
 
 # define the LightningModule
 class LitAutoEncoder(pl.LightningModule):
     def __init__(self, config):
         super().__init__()
-        data_builder = DataBuilders(config["dataset_name"], config["data_pipeline"])
+        data_builder = DataBuilder(config["dataset_name"], config["data_pipeline"])
 
 
     def training_step(self, batch_data, batch_idx):
@@ -29,3 +29,4 @@ class LitAutoEncoder(pl.LightningModule):
 
 # init the autoencoder
 autoencoder = LitAutoEncoder(encoder, decoder)
+os.makedirs()

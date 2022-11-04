@@ -114,6 +114,7 @@ class SemanticKITTI(BaseDataset):
     @classmethod
     def gen_config_template(cls):
         cfg_struct = {
+            'name': 'SemanticKITTI',
             'data_root': cls.default_str,
             'return_rem': True,
             'kitti_yaml': "./config/semantic-kitti.yaml"
