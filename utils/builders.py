@@ -88,3 +88,14 @@ class LossBuilder(PFBaseClass):
     def __call__(loss_name, loss_config):
         return LossLibrary.get_loss(loss_name, loss_config)
 
+
+class OptimizerBuilder(PFBaseClass):
+    OPTIMIZER = {}
+
+    @classmethod
+    def gen_config_template(cls, optimizer=None):
+        return cls.OPTIMIZER.gen_config_template(optimizer)
+
+    @staticmethod
+    def __call__(optimizer_name, optimizer_config):
+        return OptimizerLibrary.get(optimizer_name, optimizer_config)
