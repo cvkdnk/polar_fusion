@@ -42,7 +42,7 @@ class SGD(PFBaseClass):
     @classmethod
     def gen_config_template(cls):
         return {
-            'lr': 0.01
+            'lr': 0.01,
             'momentum': 0,
             'dampening': 0,
             'weight_decay': 0,
