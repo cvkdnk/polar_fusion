@@ -88,7 +88,7 @@ def scan_config(config, path):
         if isinstance(v, dict):
             scan_config(v, path+"/"+k)
         elif v == PFBaseClass.default_str:
-            print(path, k, "is not set.")
+            print(k+" in "+path+" is not set.")
 
 
 def gen_from_base():

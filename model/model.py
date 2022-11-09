@@ -11,7 +11,7 @@ class ModelInterface(PFBaseClass):
     @classmethod
     def gen_config_template(cls, name=None):
         assert name in cls.MODEL.keys(), f"Model {name} not found in {cls.MODEL.keys()}"
-        return cls.MODEL[name].gen_config_template
+        return cls.MODEL[name].gen_config_template()
 
     @classmethod
     def get_model(cls, name, config):
@@ -36,6 +36,7 @@ class ModuleBaseClass(nn.Module):
 @ModelInterface.register
 class Cylinder3D(ModuleBaseClass):
     NEED_TYPE = "Point,Voxel"
+
     @classmethod
     def gen_config_template(cls):
         config = {
