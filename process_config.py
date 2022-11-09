@@ -47,7 +47,7 @@ def update_base_config():
         f.write("DataPipeline:\n")
         for mode in ["train", "val", "test"]:
             f.write(f"    - {mode}:\n")
-            f.write("         - PointAugmentor\n\n")
+            f.write("        - PointAugmentor\n\n")
         write_tips(f, ModelInterface.MODEL)
         f.write("Model: Cylinder3D\n\n")
         write_tips(f, LossInterface.LOSS)
@@ -122,9 +122,9 @@ def gen_from_base():
         return {
             "dataset": DatasetInterface.gen_config_template(config["Dataset"]),
             "pipeline": {
-                "train": DataPipelineInterface.gen_config_template(config["Pipeline"]["train"]),
-                "val": DataPipelineInterface.gen_config_template(config["Pipeline"]["val"]),
-                "test": DataPipelineInterface.gen_config_template(config["Pipeline"]["test"])
+                "train": DataPipelineInterface.gen_config_template(config["DataPipeline"]["train"]),
+                "val": DataPipelineInterface.gen_config_template(config["DataPipeline"]["val"]),
+                "test": DataPipelineInterface.gen_config_template(config["DataPipeline"]["test"])
             },
             "dataloader": {
                 "train": {"batch_size": 4, "shuffle": True, "num_workers": 4, "pin_memory": True, "drop_last": False},
