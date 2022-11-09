@@ -21,6 +21,7 @@ class OptimizerInterface(PFBaseClass):
         return optimizer_class
 
 
+@OptimizerInterface.register
 class Adam(PFBaseClass):
     @classmethod
     def gen_config_template(cls):
@@ -38,6 +39,7 @@ class Adam(PFBaseClass):
         return optim.Adam(**kwargs)
 
 
+@OptimizerInterface.register
 class SGD(PFBaseClass):
     @classmethod
     def gen_config_template(cls):

@@ -20,13 +20,13 @@ def parse_args():
 def update_base_config():
     """rewrite ./config/base.yaml"""
     assert DatasetInterface.DATASET, "ERROR, ./dataloader/dataloader.py -> DatasetInterface.DATASET " + \
-                                "is EMPTY, need to register dataset first"
+                                     "is EMPTY, need to register dataset first"
     assert DataPipelineInterface.PIPELINE, "ERROR, ./dataloader/data_pipeline.py -> DataPipelineInterface.PIPELINE " + \
-                                 "is EMPTY, need to register data pipeline first"
+                                           "is EMPTY, need to register data pipeline first"
     assert ModelInterface.MODEL, "ERROR, ./model/model.py -> ModelInterface.MODEL " + \
-                               "is EMPTY, need to register model first"
+                                 "is EMPTY, need to register model first"
     assert LossInterface.LOSS, "ERROR, ./loss/loss.py -> LossInterface.LOSS " + \
-                             "is EMPTY, need to register loss first"
+                               "is EMPTY, need to register loss first"
     assert OptimizerInterface.OPTIMIZER, "ERROR, ./utils/optimizer.py -> OptimizerInterface.OPTIMIZER " + \
                                          "is EMPTY, need to register optimizer first"
 
