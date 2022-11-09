@@ -34,7 +34,7 @@ class BaseLoss(PFBaseClass):
     def gen_config_template(cls):
         raise NotImplementedError
 
-    def __init__(self, config):
+    def __init__(self, **config):
         self.config = config
 
     def __call__(self, pred, target):
@@ -49,8 +49,8 @@ class CrossEntropyLoss(BaseLoss):
             "weight": None,
         }
 
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, **config):
+        super().__init__(**config)
         self.loss = nn.CrossEntropyLoss(
             weight=self.config["weight"],
             ignore_index=self.config["ignore"]
@@ -66,8 +66,8 @@ class LovaszSoftmax(BaseLoss):
     def gen_config_template(cls):
         return {}
 
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, **config):
+        super().__init__(**config)
         self.ignore = config["ignore"]
 
     def __call__(self, pred, target):

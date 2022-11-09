@@ -5,16 +5,23 @@ from dataloader import DatasetInterface, DataPipelineInterface
 from loss import LossInterface
 from utils.optimizer import OptimizerInterface
 from model import ModelInterface
-from utils.pf_base_class import PFBaseClass
 from dataloader.data_utils import custom_collate_fn
 from process_config import load_config
+
 
 class Builder:
     def __init__(self, config_path):
         self.config = load_config(config_path)
 
+    def build(self):
+        train_loader, val_loader, test_loader = self.get_dataloader()
+        model = self.get_model()
+        loss = self.get_loss()
+        optimizer = self.get_optimizer()
+        return train_loader, val_loader, test_loader, model, loss, optimizer
+
     def get_dataloader(self):
-        dataflow = DatasetInterface.get_dataflow(self.config["Dataset"], self.config["dataset"])
+        dataflow = DatasetInterface.get_dataflow(self.config["Dataset"], self.config["data"]["dataset"])
 
         class DataPipeline(Dataset):
             def __init__(self, dataset, data_pipeline_list, data_pipeline_config):
@@ -30,49 +37,39 @@ class Builder:
                     data.update(dp(data["Point"], data["Label"]))
                 return data
 
-        train_dataset = DataPipeline(dataflow["train"], self.config["DataPipeline"]["train"], datapipeline_config["train"])
-        val_dataset = DataPipeline(dataflow["val"], data_pipeline["val"], datapipeline_config["val"])
-        test_dataset = DataPipeline(dataflow["test"], data_pipeline["test"], datapipeline_config["test"])
+        train_dataset = DataPipeline(dataflow["train"],
+                                     self.config["DataPipeline"]["train"],
+                                     self.config["data"]["pipeline"]["train"])
+        val_dataset = DataPipeline(dataflow["val"],
+                                   self.config["DataPipeline"]["val"],
+                                   self.config["data"]["pipeline"]["val"])
+        test_dataset = DataPipeline(dataflow["test"],
+                                    self.config["DataPipeline"]["test"],
+                                    self.config["data"]["pipeline"]["test"])
 
-        train_loader = DataLoader(train_dataset, collate_fn=custom_collate_fn, **dataloader_config["train"])
-        val_loader = DataLoader(val_dataset, shuffle=False, collate_fn=custom_collate_fn, **dataloader_config["val"])
-        test_loader = DataLoader(test_dataset, shuffle=False, collate_fn=custom_collate_fn, **dataloader_config["test"])
+        train_loader = DataLoader(train_dataset, collate_fn=custom_collate_fn,
+                                  **self.config["data"]["dataloader"]["train"])
+        val_loader = DataLoader(val_dataset, shuffle=False, collate_fn=custom_collate_fn,
+                                **self.config["data"]["dataloader"]["val"])
+        test_loader = DataLoader(test_dataset, shuffle=False, collate_fn=custom_collate_fn,
+                                 **self.config["data"]["dataloader"]["test"])
 
         return train_loader, val_loader, test_loader
 
+    def get_model(self):
+        model = ModelInterface.get_model(self.config["Model"], self.config["model"])
+        return model
 
+    def get_loss(self):
+        loss_name = self.config["Loss"]
+        if isinstance(loss_name, list):
+            loss = []
+            for l in loss_name:
+                loss.append(LossInterface.get_loss(l, **self.config["loss"]))
+            return loss
+        elif isinstance(loss_name, str):
+            return LossInterface.get_loss(loss_name, **self.config["loss"])
 
-# class ModelBuilder(PFBaseClass):
-#     MODEL = ModelInterface.MODEL
-#
-#     @classmethod
-#     def gen_config_template(cls, model_name=None):
-#         return ModelInterface.gen_config_template(model_name)
-#
-#     @staticmethod
-#     def __call__(model_name, model_config):
-#         return ModelInterface.get_model(model_name, model_config)
-
-
-# class LossBuilder(PFBaseClass):
-#     LOSS = LossInterface.LOSS
-#
-#     @classmethod
-#     def gen_config_template(cls, loss=None):
-#         return LossInterface.gen_config_template(loss)
-#
-#     @staticmethod
-#     def __call__(loss_name, loss_config):
-#         return LossInterface.get_loss(loss_name, loss_config)
-
-
-# class OptimizerBuilder(PFBaseClass):
-#     OPTIMIZER = OptimizerInterface.OPTIMIZER
-#
-#     @classmethod
-#     def gen_config_template(cls, optimizer=None):
-#         return cls.OPTIMIZER.gen_config_template(optimizer)
-#
-#     @staticmethod
-#     def __call__(optimizer_name, optimizer_config):
-#         return OptimizerInterface.get_optimizer(optimizer_name, optimizer_config)
+    def get_optimizer(self):
+        optimizer = OptimizerInterface.get_optimizer(self.config["Optimizer"], **self.config["optimizer"])
+        return optimizer

@@ -12,8 +12,8 @@ class OptimizerInterface(PFBaseClass):
         return cls.OPTIMIZER[name].gen_config_template()
 
     @classmethod
-    def get_optimizer(cls, name, config):
-        return cls.OPTIMIZER[name](config)
+    def get_optimizer(cls, name, **config):
+        return cls.OPTIMIZER[name](**config)
 
     @staticmethod
     def register(optimizer_class):
