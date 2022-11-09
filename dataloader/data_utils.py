@@ -15,10 +15,10 @@ class SemKittiUtils:
         """return sorted semkitti data path list"""
         data_path_list = []
         for sequence in split:
-            velodyne_dir = os.path.join(data_path, str(sequence).zfill(2), "velodyne")
+            velodyne_dir = data_path + "/" + str(sequence).zfill(2) + "/velodyne"
             bin_list = sorted(os.listdir(velodyne_dir))
             for filename in bin_list:
-                data_path_list.append(os.path.join(velodyne_dir, filename))
+                data_path_list.append(velodyne_dir + "/" + filename)
         return data_path_list
 
     @staticmethod
