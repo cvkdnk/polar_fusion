@@ -12,6 +12,10 @@ from process_config import load_config
 class Builder:
     def __init__(self, config_path):
         self.config = load_config(config_path)
+        self.train_loader, val_loader, test_loader = self.get_dataloader()
+        self.model = self.get_model()
+        self.loss = self.get_loss()
+        self.optimizer = self.get_optimizer()
 
     def build(self):
         train_loader, val_loader, test_loader = self.get_dataloader()
