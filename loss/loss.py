@@ -15,7 +15,7 @@ class LossInterface(PFBaseClass):
                 return_dict.update(LossInterface.gen_config_template(l))
             return return_dict
         elif isinstance(loss, str):
-            return LossInterface.gen_config_template(loss)
+            return LossInterface.LOSS[loss].gen_config_template()
         else:
             raise TypeError("loss should be list or str")
 
