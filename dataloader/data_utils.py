@@ -10,7 +10,6 @@ from torchsparse.utils.collate import sparse_collate
 class SemKittiUtils:
     """A set of utils used to process SemantickKITTI dataset"""
     @staticmethod
-    @jit(nopython=True)
     def load_data_path(data_path, split):
         """return sorted semkitti data path list"""
         data_path_list = []
