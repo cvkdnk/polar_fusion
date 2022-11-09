@@ -4,13 +4,20 @@ from utils import PFBaseClass
 from loss.lovasz import lovasz_softmax
 
 
-class LossLibrary(PFBaseClass):
+class LossInterface(PFBaseClass):
     LOSS = {}
 
     @classmethod
-    def gen_config_template(cls, name=None):
-        assert name in cls.LOSS.keys(), f"Loss {name} not found in {cls.LOSS.keys()}"
-        return cls.LOSS[name].gen_config_template()
+    def gen_config_template(cls, loss=None):
+        return_dict = {"ignore": 0}
+        if isinstance(loss, list):
+            for l in loss:
+                return_dict.update(LossInterface.gen_config_template(l))
+            return return_dict
+        elif isinstance(loss, str):
+            return LossInterface.gen_config_template(loss)
+        else:
+            raise TypeError("loss should be list or str")
 
     @classmethod
     def get_loss(cls, name, config):
@@ -18,7 +25,7 @@ class LossLibrary(PFBaseClass):
 
     @staticmethod
     def register(loss_class):
-        LossLibrary.LOSS[loss_class.__name__] = loss_class
+        LossInterface.LOSS[loss_class.__name__] = loss_class
         return loss_class
 
 
@@ -34,7 +41,7 @@ class BaseLoss(PFBaseClass):
         raise NotImplementedError
 
 
-@LossLibrary.register
+@LossInterface.register
 class CrossEntropyLoss(BaseLoss):
     @classmethod
     def gen_config_template(cls):
@@ -53,7 +60,7 @@ class CrossEntropyLoss(BaseLoss):
         return self.loss(pred, target)
 
 
-@LossLibrary.register
+@LossInterface.register
 class LovaszSoftmax(BaseLoss):
     @classmethod
     def gen_config_template(cls):

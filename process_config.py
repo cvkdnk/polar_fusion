@@ -2,7 +2,10 @@ import os, yaml
 import argparse
 import datetime
 import shutil
-from utils.builders import DataBuilder, ModelBuilder, LossBuilder
+from dataloader import DatasetInterface, DataPipelineInterface
+from model import ModelInterface
+from loss import LossInterface
+from utils.optimizer import OptimizerInterface
 from utils import PFBaseClass
 
 
@@ -16,14 +19,16 @@ def parse_args():
 
 def update_base_config():
     """rewrite ./config/base.yaml"""
-    assert DataBuilder.DATASET, "ERROR, ./dataloader/dataloader.py -> DatasetLibrary.DATASET " + \
+    assert DatasetInterface.DATASET, "ERROR, ./dataloader/dataloader.py -> DatasetInterface.DATASET " + \
                                 "is EMPTY, need to register dataset first"
-    assert DataBuilder.PIPELINE, "ERROR, ./dataloader/data_pipeline.py -> DataPipelineLibrary.PIPELINE " + \
+    assert DataPipelineInterface.PIPELINE, "ERROR, ./dataloader/data_pipeline.py -> DataPipelineInterface.PIPELINE " + \
                                  "is EMPTY, need to register data pipeline first"
-    assert ModelBuilder.MODEL, "ERROR, ./model/model_lib.py -> ModelLibrary.MODEL " + \
+    assert ModelInterface.MODEL, "ERROR, ./model/model.py -> ModelInterface.MODEL " + \
                                "is EMPTY, need to register model first"
-    assert LossBuilder.LOSS, "ERROR, ./loss/loss_lib.py -> LossLibrary.LOSS " + \
+    assert LossInterface.LOSS, "ERROR, ./loss/loss.py -> LossInterface.LOSS " + \
                              "is EMPTY, need to register loss first"
+    assert OptimizerInterface.OPTIMIZER, "ERROR, ./utils/optimizer.py -> OptimizerInterface.OPTIMIZER " + \
+                                         "is EMPTY, need to register optimizer first"
 
     with open("./config/base.yaml", 'w', encoding='utf-8') as f:
         f.write("# Base config to generate config dir\n")
@@ -31,32 +36,35 @@ def update_base_config():
         f.write("# The param is where to store the generated config files, \n" + \
                 "# base path is {}\n".format(os.getcwd() + "/config"))
         f.write("Dirname: /path/to/store/configs\n\n")
-        for strline in yield_line_every5(DataBuilder.DATASET.keys()):
-            f.write(strline)
+
+        def write_tips(file, _dict):
+            for strline in yield_line_every5(_dict.keys()):
+                file.write(strline)
+
+        write_tips(f, DatasetInterface.DATASET)
         f.write("Dataset: SemanticKITTI\n\n")
-        for strline in yield_line_every5(DataBuilder.PIPELINE.keys()):
-            f.write(strline)
+        write_tips(f, DataPipelineInterface.PIPELINE)
         f.write("DataPipeline:\n")
         for mode in ["train", "val", "test"]:
             f.write(f"    - {mode}:\n")
             f.write("         - PointAugmentor\n\n")
-        for strline in yield_line_every5(ModelBuilder.MODEL.keys()):
-            f.write(strline)
+        write_tips(f, ModelInterface.MODEL)
         f.write("Model: Cylinder3D\n\n")
-        for strline in yield_line_every5(LossBuilder.LOSS.keys()):
-            f.write(strline)
+        write_tips(f, LossInterface.LOSS)
         f.write("Loss:\n    - CrossEntropyLoss\n    - LovaszSoftmax\n\n")
-        f.write("# Complete the file and run [python process_config.py -b]")
+        write_tips(f, OptimizerInterface.OPTIMIZER)
+        f.write("Optimizer: Adam\n\n")
+        f.write("# Complete the file and run [python process_config.py -g]")
     print("Update base config file successfully.")
 
 
 def examine_config(config):
     """check if the config is valid (between model and data pipeline)."""
-    need_type = ModelBuilder.MODEL[config["Model"]].NEED_TYPE
+    need_type = ModelInterface.MODEL[config["Model"]].NEED_TYPE
     assert need_type, "ERROR, the model have not define NEED_TYPE"
     return_type_list = []
     for data_pipeline in config["DataPipeline"]:
-        return_type = DataBuilder.PIPELINE[data_pipeline].RETURN_TYPE
+        return_type = DataPipelineInterface.PIPELINE[data_pipeline].RETURN_TYPE
         assert return_type, "ERROR, the data pipeline have not define RETURN_TYPE"
         return_type_list.append(return_type)
     for need_type_i in need_type.split(","):
@@ -74,13 +82,13 @@ def yield_line_every5(l):
     yield str_line + "\n"
 
 
-def scan_config(config, cfg_type):
+def scan_config(config, path):
     """When generating config files, scan the config file and print which params need to set"""
     for k, v in config.items():
         if isinstance(v, dict):
-            scan_config(v, cfg_type)
+            scan_config(v, path+"/"+k)
         elif v == PFBaseClass.default_str:
-            print(cfg_type, k, "is not set.")
+            print(path, k, "is not set.")
 
 
 def gen_from_base():
@@ -97,38 +105,55 @@ def gen_from_base():
         os.path.join(work_path, "base.yaml")
     )
 
-    def create_3mode(path):
+    def create_3mode_dirs(path):
         os.makedirs(os.path.join(path, "train"), exist_ok=args.force)
         os.makedirs(os.path.join(path, "val"), exist_ok=args.force)
         os.makedirs(os.path.join(path, "test"), exist_ok=args.force)
 
     os.makedirs(os.path.join(work_path, "data", "dataset"), exist_ok=args.force)
-    create_3mode(os.path.join(work_path, "data", "pipeline"))
-    create_3mode(os.path.join(work_path, "data", "dataloader"))
+    create_3mode_dirs(os.path.join(work_path, "data", "pipeline"))
+    create_3mode_dirs(os.path.join(work_path, "data", "dataloader"))
     os.makedirs(os.path.join(work_path, "model"), exist_ok=args.force)
     os.makedirs(os.path.join(work_path, "loss"), exist_ok=args.force)
+    os.makedirs(os.path.join(work_path, "optimizer"), exist_ok=args.force)
+    # os.makedirs(os.path.join(work_path, "scheduler"), exist_ok=args.force)
 
-    data_config = DataBuilder.gen_config_template(base_config["Dataset"], base_config["DataPipeline"])
-    dataset_config = data_config["dataset"]
-    pipeline_config = data_config["pipeline"]
-    dataloader_config = data_config["dataloader"]
-    scan_config(dataset_config, "dataset")
-    scan_config(pipeline_config, "pipeline")
-    scan_config(dataloader_config, "dataloader")
+    def gen_config_template(config):
+        return {
+            "dataset": DatasetInterface.gen_config_template(config["Dataset"]),
+            "pipeline": {
+                "train": DataPipelineInterface.gen_config_template(config["Pipeline"]["train"]),
+                "val": DataPipelineInterface.gen_config_template(config["Pipeline"]["val"]),
+                "test": DataPipelineInterface.gen_config_template(config["Pipeline"]["test"])
+            },
+            "dataloader": {
+                "train": {"batch_size": 4, "shuffle": True, "num_workers": 4, "pin_memory": True, "drop_last": False},
+                "val": {"batch_size": 4, "num_workers": 4, "pin_memory": True},
+                "test": {"batch_size": 1, "num_workers": 4, "pin_memory": True}
+            },
+            "model": ModelInterface.gen_config_template(config["Model"]),
+            "loss": LossInterface.gen_config_template(config["Loss"]),
+            "optimizer": OptimizerInterface.gen_config_template(config["Optimizer"]),
+            # "scheduler": SchedulerInterface.gen_config_template(config["Scheduler"])
+        }
+
+    config_template = gen_config_template(base_config)
+    scan_config(config_template, "")
     with open(os.path.join(work_path, "data", "dataset", base_config["Dataset"]+".yaml"), 'w') as f:
-        yaml.dump(dataset_config, f)
+        yaml.dump(config_template["dataset"], f)
     for mode in ["train", "val", "test"]:
         with open(os.path.join(work_path, "data", "pipeline", mode, mode+"_pipeline.yaml"), 'w') as f:
-            yaml.dump(pipeline_config[mode], f)
+            yaml.dump(config_template["pipeline"][mode], f)
         with open(os.path.join(work_path, "data", "dataloader", mode, mode+"_dataloader.yaml"), 'w') as f:
-            yaml.dump(dataloader_config[mode], f)
-    model_config = ModelBuilder.gen_config_template(base_config["Model"])
-    scan_config(model_config, "Model")
+            yaml.dump(config_template["dataloader"][mode], f)
     with open(work_path + "/model/" + base_config["Model"] + ".yaml", 'w') as f:
-        yaml.dump(model_config, f)
-    loss_config = LossBuilder.gen_config_template(base_config["Loss"])
+        yaml.dump(config_template["model"], f)
     with open(work_path + "/loss/loss.yaml", 'w') as f:
-        yaml.dump(loss_config, f)
+        yaml.dump(config_template["loss"], f)
+    with open(work_path + "/optimizer/"+ base_config["Optimizer"] +".yaml", 'w') as f:
+        yaml.dump(config_template["optimizer"], f)
+    # with open(work_path + "/scheduler/"+ base_config["Scheduler"] +".yaml", 'w') as f:
+    #     yaml.dump(config_template["scheduler"], f)
     print("Generate config files successfully.")
 
 

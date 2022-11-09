@@ -1,40 +1,24 @@
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 
-from dataloader import DatasetLibrary, DataPipelineLibrary
-from loss import LossLibrary
+from dataloader import DatasetInterface, DataPipelineInterface
+from loss import LossInterface
+from utils.optimizer import OptimizerInterface
+from model import ModelInterface
 from utils.pf_base_class import PFBaseClass
 from dataloader.data_utils import custom_collate_fn
-from model.model_lib import ModelLibrary
+from process_config import load_config
 
+class Builder:
+    def __init__(self, config_path):
+        self.config = load_config(config_path)
 
-class DataBuilder(PFBaseClass):
-    DATASET = DatasetLibrary.DATASET
-    PIPELINE = DataPipelineLibrary.PIPELINE
-
-    @classmethod
-    def gen_config_template(cls, dataset_name=None, data_pipeline=None):
-        return {
-            "dataset": DatasetLibrary.gen_config_template(dataset_name),
-            "pipeline": {
-                "train": {dp: DataPipelineLibrary.gen_config_template(dp) for dp in data_pipeline["train"]},
-                "val": {dp: DataPipelineLibrary.gen_config_template(dp) for dp in data_pipeline["val"]},
-                "test": {dp: DataPipelineLibrary.gen_config_template(dp) for dp in data_pipeline["test"]}
-            },
-            "dataloader": {
-                "train": {"batch_size": 4, "shuffle": True, "num_workers": 4, "pin_memory": True, "drop_last": False},
-                "val": {"batch_size": 4, "num_workers": 4, "pin_memory": True},
-                "test": {"batch_size": 1, "num_workers": 4, "pin_memory": True}
-            }
-        }
-
-    def __call__(self, dataset_name, data_pipeline, dataset_config, dataloader_config, datapipeline_config):
-        dataflow = DatasetLibrary.get_dataflow(dataset_name, dataset_config)
+    def get_dataloader(self):
+        dataflow = DatasetInterface.get_dataflow(self.config["Dataset"], self.config["dataset"])
 
         class DataPipeline(Dataset):
             def __init__(self, dataset, data_pipeline_list, data_pipeline_config):
-                self.data_pipeline = [DataPipelineLibrary.get_pipeline(dp, data_pipeline_config[dp])
-                                      for dp in data_pipeline_list]
+                self.data_pipeline = DataPipelineInterface.get_pipeline(data_pipeline_list, data_pipeline_config)
                 self.dataset = dataset
 
             def __len__(self):
@@ -46,7 +30,7 @@ class DataBuilder(PFBaseClass):
                     data.update(dp(data["Point"], data["Label"]))
                 return data
 
-        train_dataset = DataPipeline(dataflow["train"], data_pipeline["train"], datapipeline_config["train"])
+        train_dataset = DataPipeline(dataflow["train"], self.config["DataPipeline"]["train"], datapipeline_config["train"])
         val_dataset = DataPipeline(dataflow["val"], data_pipeline["val"], datapipeline_config["val"])
         test_dataset = DataPipeline(dataflow["test"], data_pipeline["test"], datapipeline_config["test"])
 
@@ -57,45 +41,38 @@ class DataBuilder(PFBaseClass):
         return train_loader, val_loader, test_loader
 
 
-class ModelBuilder(PFBaseClass):
-    MODEL = ModelLibrary.MODEL
 
-    @classmethod
-    def gen_config_template(cls, model_name=None):
-        return ModelLibrary.gen_config_template(model_name)
-
-    @staticmethod
-    def __call__(model_name, model_config):
-        return ModelLibrary.get_model(model_name, model_config)
-
-
-class LossBuilder(PFBaseClass):
-    LOSS = LossLibrary.LOSS
-
-    @classmethod
-    def gen_config_template(cls, loss=None):
-        return_dict = {"ignore": 0}
-        if isinstance(loss, list):
-            for l in loss:
-                return_dict.update(LossLibrary.gen_config_template(l))
-            return return_dict
-        elif isinstance(loss, str):
-            return LossLibrary.gen_config_template(loss)
-        else:
-            raise TypeError("loss should be list or str")
-
-    @staticmethod
-    def __call__(loss_name, loss_config):
-        return LossLibrary.get_loss(loss_name, loss_config)
+# class ModelBuilder(PFBaseClass):
+#     MODEL = ModelInterface.MODEL
+#
+#     @classmethod
+#     def gen_config_template(cls, model_name=None):
+#         return ModelInterface.gen_config_template(model_name)
+#
+#     @staticmethod
+#     def __call__(model_name, model_config):
+#         return ModelInterface.get_model(model_name, model_config)
 
 
-class OptimizerBuilder(PFBaseClass):
-    OPTIMIZER = {}
+# class LossBuilder(PFBaseClass):
+#     LOSS = LossInterface.LOSS
+#
+#     @classmethod
+#     def gen_config_template(cls, loss=None):
+#         return LossInterface.gen_config_template(loss)
+#
+#     @staticmethod
+#     def __call__(loss_name, loss_config):
+#         return LossInterface.get_loss(loss_name, loss_config)
 
-    @classmethod
-    def gen_config_template(cls, optimizer=None):
-        return cls.OPTIMIZER.gen_config_template(optimizer)
 
-    @staticmethod
-    def __call__(optimizer_name, optimizer_config):
-        return OptimizerLibrary.get(optimizer_name, optimizer_config)
+# class OptimizerBuilder(PFBaseClass):
+#     OPTIMIZER = OptimizerInterface.OPTIMIZER
+#
+#     @classmethod
+#     def gen_config_template(cls, optimizer=None):
+#         return cls.OPTIMIZER.gen_config_template(optimizer)
+#
+#     @staticmethod
+#     def __call__(optimizer_name, optimizer_config):
+#         return OptimizerInterface.get_optimizer(optimizer_name, optimizer_config)

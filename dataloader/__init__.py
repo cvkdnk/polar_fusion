@@ -1,2 +1,2 @@
-from .dataloader import DatasetLibrary
-from .data_pipeline import DataPipelineLibrary
+from .dataloader import DatasetInterface
+from .data_pipeline import DataPipelineInterface

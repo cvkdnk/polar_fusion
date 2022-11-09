@@ -7,21 +7,27 @@ from utils.pf_base_class import PFBaseClass
 from dataloader.data_utils import cart2polar, polar2cart, cart2spherical
 
 
-class DataPipelineLibrary(PFBaseClass):
+class DataPipelineInterface(PFBaseClass):
     PIPELINE = {}
 
     @classmethod
     def get_pipeline(cls, name, pipeline_config):
-        return cls.PIPELINE[name](pipeline_config)
+        if isinstance(name, str):
+            return cls.PIPELINE[name](**pipeline_config)
+        elif isinstance(name, list):
+            return [cls.PIPELINE[n](**pipeline_config[n]) for n in name]
+        raise TypeError("DataPipeline in base.yaml should be str or list")
 
     @classmethod
     def gen_config_template(cls, name=None):
-        assert name in cls.PIPELINE.keys(), f"Pipeline {name} not found in {cls.PIPELINE.keys()}"
-        return cls.PIPELINE[name].gen_config_template()
+        if isinstance(name, str):
+            return {name: cls.PIPELINE[name].gen_config_template()}
+        elif isinstance(name, list):
+            return {n: cls.PIPELINE[n].gen_config_template() for n in name}
 
     @staticmethod
     def register(pipeline_class):
-        DataPipelineLibrary.PIPELINE[pipeline_class.__name__] = pipeline_class
+        DataPipelineInterface.PIPELINE[pipeline_class.__name__] = pipeline_class
         return pipeline_class
 
 
@@ -43,9 +49,11 @@ class DataPipelineBaseClass(PFBaseClass):
 class PointExtendChannel(DataPipelineBaseClass):
     RETURN_TYPE = "Point"
 
-    def __init__(self, config):
+    def __init__(self, extend_dist=True, extend_pitch=True, extend_yaw=False):
         super().__init__()
-        self.extend_channels = config["extend_channels"]
+        self.extend_dist = extend_dist
+        self.extend_pitch = extend_pitch
+        self.extend_yaw = extend_yaw
 
     @classmethod
     def gen_config_template(cls):
@@ -59,21 +67,21 @@ class PointExtendChannel(DataPipelineBaseClass):
     def __call__(self, pt_features, labels):
         data = pt_features
         xyz_sphere = cart2spherical(pt_features)
-        if self.extend_channels["dist"]:
+        if self.extend_dist:
             data = np.concatenate([pt_features, np.linalg.norm(pt_features[..., :2], axis=1, keepdims=True)], axis=1)
-        if self.extend_channels["pitch"]:
+        if self.extend_pitch:
             data = np.concatenate([data, xyz_sphere[..., 2]], axis=1)
-        if self.extend_channels["yaw"]:
+        if self.extend_yaw:
             data = np.concatenate([data, xyz_sphere[..., 1]], axis=1)
         return {"Point": data}
 
 
-@DataPipelineLibrary.register
+@DataPipelineInterface.register
 class PointAugmentor(DataPipelineBaseClass):
     """Point Augmentor, which include rotate, jitter, scale and flip """
     RETURN_TYPE = "Point"
 
-    def __init__(self, config):
+    def __init__(self, **config):
         super(PointAugmentor, self).__init__()
         self.rotate = config["rotate"]
         self.jitter = config["jitter"]
@@ -157,11 +165,11 @@ class PointAugmentor(DataPipelineBaseClass):
         return flipped_points
 
 
-@DataPipelineLibrary.register
+@DataPipelineInterface.register
 class InsAugPointAugmentor(DataPipelineBaseClass):  # TODO: Complete this class
     RETURN_TYPE = "Point"
 
-    def __init__(self, config):
+    def __init__(self, **config):
         super(InsAugPointAugmentor, self).__init__()
         self.ins_aug_max_num = config["ins_aug_max_num"]
         self.ins_aug_scale = config["ins_aug_scale"]
@@ -181,11 +189,11 @@ class InsAugPointAugmentor(DataPipelineBaseClass):  # TODO: Complete this class
         raise NotImplementedError
 
 
-@DataPipelineLibrary.register
+@DataPipelineInterface.register
 class Voxel(PFBaseClass):
     RETURN_TYPE = "Voxel"
 
-    def __init__(self, config):
+    def __init__(self, **config):
         super(Voxel, self).__init__()
         self.voxel_size = config["voxel_size"]
         self.fixed_volume_space = config["fixed_volume_space"]  # {inuse, max, min}
@@ -235,11 +243,11 @@ class Voxel(PFBaseClass):
         }}
 
 
-@DataPipelineLibrary.register
+@DataPipelineInterface.register
 class Cylindrical(PFBaseClass):
     RETURN_TYPE = "Voxel"
 
-    def __init__(self, config):
+    def __init__(self, **config):
         super(Cylindrical, self).__init__()
         self.voxel_size = config["voxel_size"]
         self.fixed_volume_space = config["fixed_volume_space"]
@@ -317,11 +325,11 @@ class Cylindrical(PFBaseClass):
         pass
 
 
-@DataPipelineLibrary.register
+@DataPipelineInterface.register
 class RangeProject(DataPipelineBaseClass):
     RETURN_TYPE = "Range"
 
-    def __init__(self, config):
+    def __init__(self, **config):
         super(RangeProject, self).__init__()
         self.proj_H = config["proj_H"]
         self.proj_W = config["proj_W"]
@@ -386,11 +394,11 @@ class RangeProject(DataPipelineBaseClass):
         }}
 
 
-@DataPipelineLibrary.register
+@DataPipelineInterface.register
 class BevProject(DataPipelineBaseClass):  # TODO: complete this
     RETURN_TYPE = "Bev"
 
-    def __init__(self, config):
+    def __init__(self, **config):
         super(BevProject, self).__init__()
 
     @classmethod
@@ -401,11 +409,11 @@ class BevProject(DataPipelineBaseClass):  # TODO: complete this
         return {"Bev": pt_features[..., 1:3]}
 
 
-@DataPipelineLibrary.register
+@DataPipelineInterface.register
 class PolarBevProject(DataPipelineBaseClass):  # TODO: complete this
     RETURN_TYPE = "Bev"
 
-    def __init__(self, config):
+    def __init__(self, **config):
         super(PolarBevProject, self).__init__()
 
     @classmethod

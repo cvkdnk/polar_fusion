@@ -1,1 +1,1 @@
-from .loss_lib import LossLibrary
+from .loss import LossInterface

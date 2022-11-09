@@ -3,17 +3,18 @@ import yaml
 
 from dataloader.data_utils import SemKittiUtils, label_mapping
 from utils.pf_base_class import PFBaseClass
+from dataloader.data_pipeline import DataPipelineInterface
 
 
-class DatasetLibrary(PFBaseClass):
+class DatasetInterface(PFBaseClass):
     DATASET = {}
 
     @classmethod
-    def get_dataflow(cls, name, ds_config):
+    def get_dataflow(cls, name, config):
         dataflow = {
-            "train": cls.DATASET[name](ds_config, mode="train"),
-            "val": cls.DATASET[name](ds_config, mode="val"),
-            "test": cls.DATASET[name](ds_config, mode="test")
+            "train": cls.DATASET[name](config, mode="train"),
+            "val": cls.DATASET[name](config, mode="val"),
+            "test": cls.DATASET[name](config, mode="test")
         }
         return dataflow
 
@@ -24,7 +25,7 @@ class DatasetLibrary(PFBaseClass):
 
     @staticmethod
     def register(dataset_class):
-        DatasetLibrary.DATASET[dataset_class.__name__] = dataset_class
+        DatasetInterface.DATASET[dataset_class.__name__] = dataset_class
         return dataset_class
 
 
@@ -66,7 +67,7 @@ class BaseDataset(PFBaseClass):
         return mean, std, proportion
 
 
-@DatasetLibrary.register
+@DatasetInterface.register
 class SemanticKITTI(BaseDataset):
     test_config = {
         'data_root': '/data/semantickitti/sequences',
@@ -122,7 +123,7 @@ class SemanticKITTI(BaseDataset):
         return cfg_struct
 
 
-@DatasetLibrary.register
+@DatasetInterface.register
 class NuScenes(BaseDataset): # TODO: complete nuscenes dataset
     def __init__(self):
         super().__init__()

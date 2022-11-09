@@ -3,7 +3,7 @@ from torch import optim
 from utils import PFBaseClass
 
 
-class OptimizerLibrary(PFBaseClass):
+class OptimizerInterface(PFBaseClass):
     OPTIMIZER = {}
 
     @classmethod
@@ -17,7 +17,7 @@ class OptimizerLibrary(PFBaseClass):
 
     @staticmethod
     def register(optimizer_class):
-        OptimizerLibrary.OPTIMIZER[optimizer_class.__name__] = optimizer_class
+        OptimizerInterface.OPTIMIZER[optimizer_class.__name__] = optimizer_class
         return optimizer_class
 
 

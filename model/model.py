@@ -5,7 +5,7 @@ from model.cylinder3d_network import CylinderPointMLP, PointWiseRefinement
 from model.segmentator_3d_asymm_torchsparse import Asymm_3d_spconv
 
 
-class ModelLibrary(PFBaseClass):
+class ModelInterface(PFBaseClass):
     MODEL = {}
 
     @classmethod
@@ -19,7 +19,7 @@ class ModelLibrary(PFBaseClass):
 
     @staticmethod
     def register(model_class):
-        ModelLibrary.MODEL[model_class.__name__] = model_class
+        ModelInterface.MODEL[model_class.__name__] = model_class
         return model_class
 
 
@@ -33,7 +33,7 @@ class ModuleBaseClass(nn.Module):
         raise NotImplementedError
 
 
-@ModelLibrary.register
+@ModelInterface.register
 class Cylinder3D(ModuleBaseClass):
     NEED_TYPE = "Point,Voxel"
     @classmethod

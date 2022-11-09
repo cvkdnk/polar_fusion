@@ -1,1 +1,1 @@
-from .model_lib import ModelLibrary
+from .model import ModelInterface
