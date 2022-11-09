@@ -46,7 +46,7 @@ def update_base_config():
         write_tips(f, DataPipelineInterface.PIPELINE)
         f.write("DataPipeline:\n")
         for mode in ["train", "val", "test"]:
-            f.write(f"    - {mode}:\n")
+            f.write(f"    {mode}:\n")
             f.write("        - PointAugmentor\n\n")
         write_tips(f, ModelInterface.MODEL)
         f.write("Model: Cylinder3D\n\n")
