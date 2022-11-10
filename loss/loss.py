@@ -13,6 +13,7 @@ class LossInterface(PFBaseClass):
         if isinstance(loss, list):
             for l in loss:
                 return_dict.update(LossInterface.gen_config_template(l))
+            return_dict["loss_weight"] = [1 for i in range(len(loss))]
             return return_dict
         elif isinstance(loss, str):
             return LossInterface.LOSS[loss].gen_config_template()

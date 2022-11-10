@@ -27,7 +27,7 @@ class Adam(PFBaseClass):
     def gen_config_template(cls):
         return {
             "lr": 0.001,
-            "betas": (0.9, 0.999),
+            "betas": [0.9, 0.999],
             "eps": 1e-8,
             "weight_decay": 0,
             "amsgrad": False
@@ -36,6 +36,7 @@ class Adam(PFBaseClass):
 
     @staticmethod
     def __call__(self, **kwargs):
+        kwargs["betas"] = tuple(kwargs["betas"])
         return optim.Adam(**kwargs)
 
 

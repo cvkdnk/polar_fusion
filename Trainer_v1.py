@@ -7,25 +7,35 @@ from utils.builders import Builder
 
 
 # define the LightningModule
-class LitAutoEncoder(pl.LightningModule):
-    def __init__(self, config):
+class AutoModel(pl.LightningModule):
+    def __init__(self, builder: Builder):
         super().__init__()
-        self.builder = Builder("./config/test")
-
+        self.builder = builder
+        self.model = builder.get_model()
+        self.loss, self.loss_weight = builder.get_loss()
 
     def training_step(self, batch_data, batch_idx):
-        # training_step defines the train loop.
-        # it is independent of forward
-
-        loss = nn.functional.mse_loss(x_hat, x)
-        # Logging to TensorBoard by default
-        self.log("train_loss", loss)
+        data = batch_data["Voxel"]
+        labels = batch_data["Label"]
+        vox_labels = labels[data["p2v_indices"]]
+        logits, vox_logits_st = self.model(data, labels)
+        if isinstance(self.loss, list):
+            loss = 0
+            for l, w in zip(self.loss, self.loss_weight):
+                loss += l(logits, labels) * w
+                loss += l(vox_logits_st.F, vox_labels) * w
+        else:
+            loss = self.loss(logits, labels) + self.loss(vox_logits_st.F, vox_labels)
         return loss
 
     def configure_optimizers(self):
-        return self.builder.optimizer
+        optimizer = self.builder.get_optimizer()
+        return optimizer
 
 
-# init the autoencoder
-autoencoder = LitAutoEncoder(encoder, decoder)
-os.makedirs()
+if __name__ == "__main__":
+    builder = Builder("./config/test/total.yaml")
+    auto_model = AutoModel(builder)
+    train_loader, *_ = builder.get_dataloader()
+    trainer = pl.Trainer()
+    trainer.fit(model=auto_model, train_dataloaders=train_loader)

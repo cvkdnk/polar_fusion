@@ -1,9 +1,8 @@
 import numpy as np
 import yaml
 
-from dataloader.data_utils import SemKittiUtils, label_mapping
+from utils.data_utils import SemKittiUtils, label_mapping
 from utils.pf_base_class import PFBaseClass
-from dataloader.data_pipeline import DataPipelineInterface
 
 
 class DatasetInterface(PFBaseClass):
@@ -104,10 +103,11 @@ class SemanticKITTI(BaseDataset):
         sem_labels = label_mapping(sem_labels, self.kitti_config['learning_map'])
         if not self.return_ref:
             pt_features = pt_features[:, :3]
+        points_num = sem_labels.shape[0]
+        return_dict = {"Point": pt_features, "Label": sem_labels, "PointsNum": points_num}
         if self.return_ins_label:
-            return {"Point": pt_features, "Label": sem_labels, "InstanceLabel": ins_labels}
-        else:
-            return {"Point": pt_features, "Label": sem_labels}
+            return_dict["InstanceLabel"] = ins_labels
+        return return_dict
 
     def __len__(self):
         return len(self.data_path)
