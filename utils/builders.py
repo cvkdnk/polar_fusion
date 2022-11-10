@@ -5,7 +5,7 @@ from dataloader import DatasetInterface, DataPipelineInterface
 from loss import LossInterface
 from utils.optimizer import OptimizerInterface
 from model import ModelInterface
-from dataloader.data_utils import custom_collate_fn
+from utils.data_utils import custom_collate_fn
 from process_config import load_config
 
 
@@ -21,7 +21,7 @@ class Builder:
         return train_loader, val_loader, test_loader, model, loss, optimizer
 
     def get_dataloader(self):
-        dataflow = DatasetInterface.get_dataflow(self.config["Dataset"], self.config["data"]["dataset"])
+        dataflow = DatasetInterface.get_dataflow(self.config["Dataset"], self.config["dataset"])
 
         class DataPipeline(Dataset):
             def __init__(self, dataset, data_pipeline_list, data_pipeline_config):
@@ -39,20 +39,20 @@ class Builder:
 
         train_dataset = DataPipeline(dataflow["train"],
                                      self.config["DataPipeline"]["train"],
-                                     self.config["data"]["pipeline"]["train"])
+                                     self.config["pipeline"]["train"])
         val_dataset = DataPipeline(dataflow["val"],
                                    self.config["DataPipeline"]["val"],
-                                   self.config["data"]["pipeline"]["val"])
+                                   self.config["pipeline"]["val"])
         test_dataset = DataPipeline(dataflow["test"],
                                     self.config["DataPipeline"]["test"],
-                                    self.config["data"]["pipeline"]["test"])
+                                    self.config["pipeline"]["test"])
 
         train_loader = DataLoader(train_dataset, collate_fn=custom_collate_fn,
-                                  **self.config["data"]["dataloader"]["train"])
+                                  **self.config["dataloader"]["train"])
         val_loader = DataLoader(val_dataset, shuffle=False, collate_fn=custom_collate_fn,
-                                **self.config["data"]["dataloader"]["val"])
+                                **self.config["dataloader"]["val"])
         test_loader = DataLoader(test_dataset, shuffle=False, collate_fn=custom_collate_fn,
-                                 **self.config["data"]["dataloader"]["test"])
+                                 **self.config["dataloader"]["test"])
 
         return train_loader, val_loader, test_loader
 
@@ -62,13 +62,14 @@ class Builder:
 
     def get_loss(self):
         loss_name = self.config["Loss"]
+        loss_weight = self.config["loss"]["loss_weight"]
         if isinstance(loss_name, list):
             loss = []
             for l in loss_name:
                 loss.append(LossInterface.get_loss(l, **self.config["loss"]))
-            return loss
+            return loss, loss_weight
         elif isinstance(loss_name, str):
-            return LossInterface.get_loss(loss_name, **self.config["loss"])
+            return LossInterface.get_loss(loss_name, **self.config["loss"]), None
 
     def get_optimizer(self):
         optimizer = OptimizerInterface.get_optimizer(self.config["Optimizer"], **self.config["optimizer"])

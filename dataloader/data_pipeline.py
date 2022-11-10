@@ -4,7 +4,7 @@ from torchsparse import SparseTensor
 from torchsparse.utils.quantize import sparse_quantize
 
 from utils.pf_base_class import PFBaseClass
-from dataloader.data_utils import cart2polar, polar2cart, cart2spherical
+from utils.data_utils import cart2polar, polar2cart, cart2spherical
 
 
 class DataPipelineInterface(PFBaseClass):
@@ -249,7 +249,6 @@ class Cylindrical(PFBaseClass):
 
     def __init__(self, **config):
         super(Cylindrical, self).__init__()
-        self.voxel_size = config["voxel_size"]
         self.fixed_volume_space = config["fixed_volume_space"]
         self.grid_shape = config["grid_shape"]
 
@@ -268,12 +267,8 @@ class Cylindrical(PFBaseClass):
         """return: point_features, voxel_start_coords, p2v, v2p"""
         xyz = pt_features[..., :3]
         xyz_pol = cart2polar(xyz)
-        max_bound_r = np.percentile(xyz_pol[..., 0], 100, axis=-2)
-        min_bound_r = np.percentile(xyz_pol[..., 0], 0, axis=-2)
-        max_bound = np.max(xyz_pol[..., 1:], axis=-2)
-        min_bound = np.min(xyz_pol[..., 1:], axis=-2)
-        max_bound = np.concatenate(([max_bound_r], max_bound))
-        min_bound = np.concatenate(([min_bound_r], min_bound))
+        max_bound = np.max(xyz_pol, axis=-2)
+        min_bound = np.min(xyz_pol, axis=-2)
         if self.fixed_volume_space["inuse"]:
             max_bound = np.asarray(self.fixed_volume_space["max_volume_space"])
             min_bound = np.asarray(self.fixed_volume_space["min_volume_space"])
@@ -285,7 +280,7 @@ class Cylindrical(PFBaseClass):
         if (grid_size == 0).any():
             print("Zero interval!")
         voxel_coords, p2v_indices, v2p_indices = sparse_quantize(
-            xyz_pol - min_bound, grid_size, return_index=True, return_inverse=True
+            xyz_pol - min_bound, tuple(grid_size), return_index=True, return_inverse=True
         )
 
         voxel_coords_pol = voxel_coords * grid_size + min_bound
@@ -317,8 +312,8 @@ class Cylindrical(PFBaseClass):
         return {"Voxel": {
             "point_feats_st": point_feats_st,
             "voxel_feats_st": voxel_feats_st,
-            "p2v_indices_list": p2v_indices,
-            "v2p_indices_list": v2p_indices,
+            "p2v_indices": p2v_indices,
+            "v2p_indices": v2p_indices,
         }}
 
     def draw(self, data):
@@ -359,10 +354,10 @@ class RangeProject(DataPipelineBaseClass):
         proj_y = (1.0 - (pitch - self.proj_fov_down) / fov) * self.proj_H
 
         # round and clamp for use as index
-        proj_x = np.floor(proj_x)
+        proj_x = np.floor(proj_x).astype(np.int32)
         proj_x = np.clip(proj_x, 0, self.proj_W - 1)
 
-        proj_y = np.floor(proj_y)
+        proj_y = np.floor(proj_y).astype(np.int32)
         proj_y = np.clip(proj_y, 0, self.proj_H - 1)
 
         unproj_range = np.copy(depth)

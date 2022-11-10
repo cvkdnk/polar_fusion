@@ -57,7 +57,7 @@ def label2word(labels, word_mapping, learning_map_inv=None):
 def cart2polar(input_xyz):
     rho = np.sqrt(input_xyz[..., 0] ** 2 + input_xyz[..., 1] ** 2)
     phi = np.arctan2(input_xyz[..., 1], input_xyz[..., 0])
-    return np.stack((rho, phi, input_xyz[..., 2:]), axis=-1)
+    return np.hstack((rho.reshape(-1, 1), phi.reshape(-1, 1), input_xyz[..., 2:]))
 
 
 def polar2cart(input_xyz_polar):
@@ -123,7 +123,7 @@ def custom_collate_fn(inputs):  # TODO: complete collate function
             if isinstance(inputs[0][name], dict):
                 output[name] = custom_collate_fn(
                     [input[name] for input in inputs])
-            elif "list" in name or "Point" == name or "Label" == name:
+            elif "list" in name:
                 output[name] = [input[name] for input in inputs]
             elif isinstance(inputs[0][name], np.ndarray):
                 output[name] = torch.stack(
