@@ -3,32 +3,55 @@ import torch
 from torchsparse import SparseTensor
 from torchsparse.utils.quantize import sparse_quantize
 
-from utils.pf_base_class import PFBaseClass
+from utils.pf_base_class import PFBaseClass, InterfaceBase
 from utils.data_utils import cart2polar, polar2cart, cart2spherical
 
 
-class DataPipelineInterface(PFBaseClass):
-    PIPELINE = {}
+class DataPipelineInterface(InterfaceBase):
+    REGISTER = {}
 
     @classmethod
-    def get_pipeline(cls, name, pipeline_config):
-        if isinstance(name, str):
-            return cls.PIPELINE[name](**pipeline_config)
-        elif isinstance(name, list):
-            return [cls.PIPELINE[n](**pipeline_config[n]) for n in name]
-        raise TypeError("DataPipeline in base.yaml should be str or list")
-
-    @classmethod
-    def gen_config_template(cls, name=None):
-        if isinstance(name, str):
-            return {name: cls.PIPELINE[name].gen_config_template()}
-        elif isinstance(name, list):
-            return {n: cls.PIPELINE[n].gen_config_template() for n in name}
+    def gen_multi_view(cls, data, polar=True):
+        if polar:
+            pipeline = ["RangeProject", "Cylindrical"]
+        else:
+            pipeline = ["RangeProject", "Voxel"]
+        for pl in pipeline:
+            data.update(cls.gen_default(pl)(data))
+        return data
 
     @staticmethod
-    def register(pipeline_class):
-        DataPipelineInterface.PIPELINE[pipeline_class.__name__] = pipeline_class
-        return pipeline_class
+    def plt(data, save_path, save_name, kitti_yaml):
+        import open3d as o3d
+        import cv2, os
+        from utils.data_utils import label_mapping
+        if "Range" in data.keys():
+            # write range
+            range_image_depth = data["Range"]["range_image"][..., 0]
+            cv2.write(os.path.join(save_path, save_name+"_range_d.png"), range_image_depth)
+            if "Label" in data.keys():
+                labels = data["Label"]
+                range_labels = labels[data["Range"]["p2r"]]
+                range_labels = label_mapping(range_labels, kitti_yaml["learning_map_inv"])
+                range_color = np.zeros((range_labels.shape[0], range_labels.shape[1], 3), dtype=np.int32)
+                for i in range(range_labels.shape[0]):
+                    for j in range(range_labels.shape[1]):
+                        range_color[i, j] = np.array(kitti_yaml["color_map"][range_labels[i, j]])
+                cv2.write(os.path.join(save_path, save_name+"_range_bgr.png"), range_color)
+
+        # write point cloud
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(data["Point"][..., :3])
+        o3d.io.write_point_cloud(os.path.join(save_path, save_name+"_pt.xyz"), pcd)
+
+        # write voxel
+        voxel_grid = o3d.geometry.VoxelGrid()
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(data["Voxel"]["voxel_feats_st"].C.numpy())
+        voxel_grid.create_from_point_cloud(pcd, voxel_size=1)
+        o3d.io.write_voxel_grid(os.path.join(save_path, save_name+"_voxel.xyz"))
+
+
 
 
 class DataPipelineBaseClass(PFBaseClass):
@@ -42,7 +65,7 @@ class DataPipelineBaseClass(PFBaseClass):
         if self.RETURN_TYPE is None:
             raise NotImplementedError
 
-    def __call__(self, pt_features, labels):
+    def __call__(self, data):
         raise NotImplementedError
 
 
@@ -58,22 +81,22 @@ class PointExtendChannel(DataPipelineBaseClass):
     @classmethod
     def gen_config_template(cls):
         config = {
-            "dist": True,
-            "pitch": True,
-            "yaw": False,
+            "extend_dist": True,
+            "extend_pitch": True,
+            "extend_yaw": False,
         }
         return config
 
-    def __call__(self, pt_features, labels):
-        data = pt_features
+    def __call__(self, data):
+        pt_features = data["Point"]
         xyz_sphere = cart2spherical(pt_features)
         if self.extend_dist:
-            data = np.concatenate([pt_features, np.linalg.norm(pt_features[..., :2], axis=1, keepdims=True)], axis=1)
+            pt_features = np.concatenate([pt_features, np.linalg.norm(pt_features[..., :2], axis=1, keepdims=True)], axis=1)
         if self.extend_pitch:
-            data = np.concatenate([data, xyz_sphere[..., 2]], axis=1)
+            pt_features = np.concatenate([pt_features, xyz_sphere[..., 2]], axis=1)
         if self.extend_yaw:
-            data = np.concatenate([data, xyz_sphere[..., 1]], axis=1)
-        return {"Point": data}
+            pt_features = np.concatenate([pt_features, xyz_sphere[..., 1]], axis=1)
+        return {"Point": pt_features}
 
 
 @DataPipelineInterface.register
@@ -97,7 +120,8 @@ class PointAugmentor(DataPipelineBaseClass):
             "flip": {'inuse': True, 'flip_axis': 0}
         }
 
-    def __call__(self, pt_features, labels):
+    def __call__(self, data):
+        pt_features = data["Point"]
         aug_features = pt_features.copy()
         if self.rotate["inuse"]:
             aug_features[:, :3] = self.rotate_point_cloud(pt_features[:, :3], self.rotate["rotation_range"])
@@ -185,12 +209,16 @@ class InsAugPointAugmentor(DataPipelineBaseClass):  # TODO: Complete this class
             "ins_aug_num": cls.default_str + ", list type"
         }
 
-    def __call__(self, pt_features, labels):
+    def __call__(self, data):
         raise NotImplementedError
 
 
+class InsPasteDrop(DataPipelineBaseClass):
+    RETURN_TYPE = "Point"
+
+
 @DataPipelineInterface.register
-class Voxel(PFBaseClass):
+class Voxel(DataPipelineBaseClass):
     RETURN_TYPE = "Voxel"
 
     def __init__(self, **config):
@@ -210,7 +238,8 @@ class Voxel(PFBaseClass):
             }
         }
 
-    def __call__(self, pt_features, labels):
+    def __call__(self, data):
+        pt_features = data["Point"]
         coords = pt_features[..., :3]
         min_bound = np.min(coords, axis=0) // self.voxel_size
         if self.fixed_volume_space["inuse"]:
@@ -244,7 +273,7 @@ class Voxel(PFBaseClass):
 
 
 @DataPipelineInterface.register
-class Cylindrical(PFBaseClass):
+class Cylindrical(DataPipelineBaseClass):
     RETURN_TYPE = "Voxel"
 
     def __init__(self, **config):
@@ -263,8 +292,9 @@ class Cylindrical(PFBaseClass):
             "grid_shape": [480, 360, 32]
         }
 
-    def __call__(self, pt_features, labels):
+    def __call__(self, data):
         """return: point_features, voxel_start_coords, p2v, v2p"""
+        pt_features = data["Point"]
         xyz = pt_features[..., :3]
         xyz_pol = cart2polar(xyz)
         max_bound = np.max(xyz_pol, axis=-2)
@@ -279,7 +309,7 @@ class Cylindrical(PFBaseClass):
         grid_size = crop_range / self.grid_shape
         if (grid_size == 0).any():
             print("Zero interval!")
-        voxel_coords, p2v_indices, v2p_indices = sparse_quantize(
+        voxel_coords, p2v, v2p = sparse_quantize(
             xyz_pol - min_bound, tuple(grid_size), return_index=True, return_inverse=True
         )
 
@@ -287,11 +317,11 @@ class Cylindrical(PFBaseClass):
         # center data on each voxel for PTnet
         voxel_centers_pol = voxel_coords_pol + 0.5 * grid_size
 
-        return_xyz = xyz_pol - voxel_centers_pol[v2p_indices]
+        return_xyz = xyz_pol - voxel_centers_pol[v2p]
         # maybe not use regression xy
         # return_xyz = np.concatenate([
         #         return_xyz,
-        #         xyz[..., :2]-polar2cart(voxel_centers_pol)[..., :2][v2p_indices]
+        #         xyz[..., :2]-polar2cart(voxel_centers_pol)[..., :2][v2p]
         #     ], axis=-1)
         return_xyz = np.concatenate((xyz, xyz_pol[..., :2], return_xyz), axis=-1)
 
@@ -302,18 +332,18 @@ class Cylindrical(PFBaseClass):
 
         point_feats_st = SparseTensor(
             feats=torch.tensor(return_fea, dtype=torch.float32),
-            coords=voxel_coords[v2p_indices]
+            coords=voxel_coords[v2p]
         )
         voxel_feats_st = SparseTensor(
-            feats=torch.tensor(return_fea[p2v_indices], dtype=torch.float32),
+            feats=torch.tensor(return_fea[p2v], dtype=torch.float32),
             coords=voxel_coords
         )
 
         return {"Voxel": {
             "point_feats_st": point_feats_st,
             "voxel_feats_st": voxel_feats_st,
-            "p2v_indices": p2v_indices,
-            "v2p_indices": v2p_indices,
+            "p2v": p2v,
+            "v2p": v2p,
         }}
 
     def draw(self, data):
@@ -340,7 +370,8 @@ class RangeProject(DataPipelineBaseClass):
             "proj_fov_down": -25
         }
 
-    def __call__(self, pt_features, labels):
+    def __call__(self, data):
+        pt_features = data["Point"]
         coords = pt_features[..., :3]
         coords_sph = cart2spherical(coords)
         coords_sph[..., 2] = np.clip(coords_sph[..., 2], self.proj_fov_down, self.proj_fov_up)
@@ -370,11 +401,11 @@ class RangeProject(DataPipelineBaseClass):
         proj_x = proj_x[order]
 
         # mapping to range image and inverse mapping
-        p2r_indices = np.zeros((pt_features.shape[0], 2), dtype=np.int32)
-        r2p_indices = np.zeros((self.proj_H, self.proj_W), dtype=np.int32)
-        p2r_indices[..., 0] = proj_y
-        p2r_indices[..., 1] = proj_x
-        r2p_indices[proj_y, proj_x] = indices
+        r2p = np.zeros((pt_features.shape[0], 2), dtype=np.int32)
+        p2r = np.zeros((self.proj_H, self.proj_W), dtype=np.int32)
+        r2p[..., 0] = proj_y
+        r2p[..., 1] = proj_x
+        p2r[proj_y, proj_x] = indices
         range_image = np.full((self.proj_H, self.proj_W, 5), -1, dtype=np.float32)
         range_image[proj_y, proj_x, 0] = depth
         range_image[proj_y, proj_x, 1:] = order_pt_features
@@ -382,10 +413,10 @@ class RangeProject(DataPipelineBaseClass):
         range_mask[proj_y, proj_x] = 1
 
         return {"Range": {
-            "range_image_ten": range_image,
-            "range_mask_ten": range_mask,
-            "p2r_indices_list": p2r_indices,
-            "r2p_indices_ten": r2p_indices,
+            "range_image": range_image,
+            "range_mask": range_mask,
+            "r2p": r2p,
+            "p2r": p2r,
         }}
 
 
@@ -400,7 +431,8 @@ class BevProject(DataPipelineBaseClass):  # TODO: complete this
     def gen_config_template(cls):
         return {}
 
-    def __call__(self, pt_features, labels):
+    def __call__(self, data):
+        pt_features = data["Point"]
         return {"Bev": pt_features[..., 1:3]}
 
 
@@ -415,5 +447,6 @@ class PolarBevProject(DataPipelineBaseClass):  # TODO: complete this
     def gen_config_template(cls):
         return {}
 
-    def __call__(self, pt_features, labels):
+    def __call__(self, data):
+        pt_features = data["Point"]
         return {"Bev": pt_features[..., 1:]}

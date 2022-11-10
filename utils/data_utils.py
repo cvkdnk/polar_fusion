@@ -125,6 +125,9 @@ def custom_collate_fn(inputs):  # TODO: complete collate function
                     [input[name] for input in inputs])
             elif "list" in name:
                 output[name] = [input[name] for input in inputs]
+            elif "range_image" == name or "range_mask" == name or "r2p_indices" == name:
+                output[name] = torch.stack([torch.tensor(input[name]).unsqueeze(0) for input in inputs],
+                                           dim=0)
             elif isinstance(inputs[0][name], np.ndarray):
                 output[name] = torch.stack(
                     [torch.tensor(input[name]) for input in inputs], dim=0)

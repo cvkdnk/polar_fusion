@@ -21,15 +21,15 @@ def parse_args():
 
 def update_base_config():
     """rewrite ./config/base.yaml"""
-    assert DatasetInterface.DATASET, "ERROR, ./dataloader/dataloader.py -> DatasetInterface.DATASET " + \
+    assert DatasetInterface.REGISTER, "ERROR, ./dataloader/dataloader.py -> DatasetInterface.DATASET " + \
                                      "is EMPTY, need to register dataset first"
-    assert DataPipelineInterface.PIPELINE, "ERROR, ./dataloader/data_pipeline.py -> DataPipelineInterface.PIPELINE " + \
+    assert DataPipelineInterface.REGISTER, "ERROR, ./dataloader/data_pipeline.py -> DataPipelineInterface.PIPELINE " + \
                                            "is EMPTY, need to register data pipeline first"
-    assert ModelInterface.MODEL, "ERROR, ./model/model.py -> ModelInterface.MODEL " + \
+    assert ModelInterface.REGISTER, "ERROR, ./model/model.py -> ModelInterface.MODEL " + \
                                  "is EMPTY, need to register model first"
-    assert LossInterface.LOSS, "ERROR, ./loss/loss.py -> LossInterface.LOSS " + \
+    assert LossInterface.REGISTER, "ERROR, ./loss/loss.py -> LossInterface.LOSS " + \
                                "is EMPTY, need to register loss first"
-    assert OptimizerInterface.OPTIMIZER, "ERROR, ./utils/optimizer.py -> OptimizerInterface.OPTIMIZER " + \
+    assert OptimizerInterface.REGISTER, "ERROR, ./utils/optimizer.py -> OptimizerInterface.OPTIMIZER " + \
                                          "is EMPTY, need to register optimizer first"
 
     with open("./config/base.yaml", 'w', encoding='utf-8') as f:
@@ -43,18 +43,18 @@ def update_base_config():
             for strline in yield_line_every5(_dict.keys()):
                 file.write(strline)
 
-        write_tips(f, DatasetInterface.DATASET)
+        write_tips(f, DatasetInterface.REGISTER)
         f.write("Dataset: SemanticKITTI\n\n")
-        write_tips(f, DataPipelineInterface.PIPELINE)
+        write_tips(f, DataPipelineInterface.REGISTER)
         f.write("DataPipeline:\n")
         for mode in ["train", "val", "test"]:
             f.write(f"    {mode}:\n")
-            f.write("    - PointAugmentor\n\n")
-        write_tips(f, ModelInterface.MODEL)
+            f.write("    - Cylindrical\n    - RangeProject\n\n")
+        write_tips(f, ModelInterface.REGISTER)
         f.write("Model: Cylinder3D\n\n")
-        write_tips(f, LossInterface.LOSS)
+        write_tips(f, LossInterface.REGISTER)
         f.write("Loss:\n- CrossEntropyLoss\n- LovaszSoftmax\n\n")
-        write_tips(f, OptimizerInterface.OPTIMIZER)
+        write_tips(f, OptimizerInterface.REGISTER)
         f.write("Optimizer: Adam\n\n")
         f.write("# Complete the file and run [python process_config.py -g]")
     print("Update base config file successfully.")
@@ -62,12 +62,12 @@ def update_base_config():
 
 def examine_config(config):
     """check if the config is valid (between model and data pipeline)."""
-    need_type = ModelInterface.MODEL[config["Model"]].NEED_TYPE
+    need_type = ModelInterface.REGISTER[config["Model"]].NEED_TYPE
     assert need_type, "ERROR, the model have not define NEED_TYPE"
     return_type_list = []
     for mode in ['train', 'val', 'test']:
         for data_pipeline in config["DataPipeline"][mode]:
-            return_type = DataPipelineInterface.PIPELINE[data_pipeline].RETURN_TYPE
+            return_type = DataPipelineInterface.REGISTER[data_pipeline].RETURN_TYPE
             assert return_type, "ERROR, the data pipeline have not define RETURN_TYPE"
             return_type_list.append(return_type)
     for need_type_i in need_type.split(","):

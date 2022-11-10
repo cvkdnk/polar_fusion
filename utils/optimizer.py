@@ -1,24 +1,10 @@
 from torch import optim
 
-from utils import PFBaseClass
+from utils import PFBaseClass, InterfaceBase
 
 
-class OptimizerInterface(PFBaseClass):
-    OPTIMIZER = {}
-
-    @classmethod
-    def gen_config_template(cls, name=None):
-        assert name in cls.OPTIMIZER.keys(), f"Model {name} not found in {cls.OPTIMIZER.keys()}"
-        return cls.OPTIMIZER[name].gen_config_template()
-
-    @classmethod
-    def get_optimizer(cls, name, **config):
-        return cls.OPTIMIZER[name](**config)
-
-    @staticmethod
-    def register(optimizer_class):
-        OptimizerInterface.OPTIMIZER[optimizer_class.__name__] = optimizer_class
-        return optimizer_class
+class OptimizerInterface(InterfaceBase):
+    REGISTER = {}
 
 
 @OptimizerInterface.register

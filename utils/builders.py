@@ -1,3 +1,4 @@
+import yaml
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 
@@ -12,6 +13,7 @@ from process_config import load_config
 class Builder:
     def __init__(self, config_path):
         self.config = load_config(config_path)
+        self.kitti_yaml = yaml.safe_load(open("./config/semantic-kitti.yaml", 'r'))
         self.train_loader, val_loader, test_loader = self.get_dataloader()
         self.model = self.get_model()
         self.loss = self.get_loss()
@@ -25,11 +27,11 @@ class Builder:
         return train_loader, val_loader, test_loader, model, loss, optimizer
 
     def get_dataloader(self):
-        dataflow = DatasetInterface.get_dataflow(self.config["Dataset"], self.config["dataset"])
+        dataflow = DatasetInterface.get(self.config["Dataset"], self.config["dataset"])
 
         class DataPipeline(Dataset):
             def __init__(self, dataset, data_pipeline_list, data_pipeline_config):
-                self.data_pipeline = DataPipelineInterface.get_pipeline(data_pipeline_list, data_pipeline_config)
+                self.data_pipeline = DataPipelineInterface.get(data_pipeline_list, data_pipeline_config)
                 self.dataset = dataset
 
             def __len__(self):
@@ -61,7 +63,7 @@ class Builder:
         return train_loader, val_loader, test_loader
 
     def get_model(self):
-        model = ModelInterface.get_model(self.config["Model"], self.config["model"])
+        model = ModelInterface.get(self.config["Model"], self.config["model"])
         return model
 
     def get_loss(self):
@@ -70,11 +72,11 @@ class Builder:
         if isinstance(loss_name, list):
             loss = []
             for l in loss_name:
-                loss.append(LossInterface.get_loss(l, **self.config["loss"]))
+                loss.append(LossInterface.get(l, **self.config["loss"]))
             return loss, loss_weight
         elif isinstance(loss_name, str):
-            return LossInterface.get_loss(loss_name, **self.config["loss"]), None
+            return LossInterface.get(loss_name, **self.config["loss"]), None
 
     def get_optimizer(self):
-        optimizer = OptimizerInterface.get_optimizer(self.config["Optimizer"], **self.config["optimizer"])
+        optimizer = OptimizerInterface.get(self.config["Optimizer"], **self.config["optimizer"])
         return optimizer

@@ -1,11 +1,11 @@
 from torch import nn
 
-from utils import PFBaseClass
+from utils import PFBaseClass, InterfaceBase
 from loss.lovasz import lovasz_softmax
 
 
-class LossInterface(PFBaseClass):
-    LOSS = {}
+class LossInterface(InterfaceBase):
+    REGISTER = {}
 
     @classmethod
     def gen_config_template(cls, loss=None):
@@ -16,18 +16,9 @@ class LossInterface(PFBaseClass):
             return_dict["loss_weight"] = [1 for i in range(len(loss))]
             return return_dict
         elif isinstance(loss, str):
-            return LossInterface.LOSS[loss].gen_config_template()
+            return LossInterface.REGISTER[loss].gen_config_template()
         else:
             raise TypeError("loss should be list or str")
-
-    @classmethod
-    def get_loss(cls, name, config):
-        return cls.LOSS[name](config)
-
-    @staticmethod
-    def register(loss_class):
-        LossInterface.LOSS[loss_class.__name__] = loss_class
-        return loss_class
 
 
 class BaseLoss(PFBaseClass):

@@ -2,30 +2,20 @@ import numpy as np
 import yaml
 
 from utils.data_utils import SemKittiUtils, label_mapping
-from utils.pf_base_class import PFBaseClass
+from utils.pf_base_class import PFBaseClass, InterfaceBase
 
 
-class DatasetInterface(PFBaseClass):
-    DATASET = {}
+class DatasetInterface(InterfaceBase):
+    REGISTER = {}
 
     @classmethod
-    def get_dataflow(cls, name, config):
+    def get(cls, name, config):
         dataflow = {
-            "train": cls.DATASET[name](config, mode="train"),
-            "val": cls.DATASET[name](config, mode="val"),
-            "test": cls.DATASET[name](config, mode="test")
+            "train": cls.REGISTER[name](mode="train", **config),
+            "val": cls.REGISTER[name](mode="val", **config),
+            "test": cls.REGISTER[name](mode="test", **config)
         }
         return dataflow
-
-    @classmethod
-    def gen_config_template(cls, name=None):
-        assert name in cls.DATASET.keys(), f"Dataset {name} not found in {cls.DATASET.keys()}"
-        return cls.DATASET[name].gen_config_template()
-
-    @staticmethod
-    def register(dataset_class):
-        DatasetInterface.DATASET[dataset_class.__name__] = dataset_class
-        return dataset_class
 
 
 class BaseDataset(PFBaseClass):
@@ -70,11 +60,11 @@ class BaseDataset(PFBaseClass):
 class SemanticKITTI(BaseDataset):
     test_config = {
         'data_root': '/data/semantickitti/sequences',
-        'return_ref': True,
+        'return_rem': True,
         'kitti_yaml': "./config/semantic-kitti.yaml"
     }
 
-    def __init__(self, ds_config, mode='train', return_ins_label=False):
+    def __init__(self, mode='train', return_ins_label=False, **ds_config):
         super(SemanticKITTI, self).__init__()
         self.return_ref = ds_config["return_rem"]
         self.return_ins_label = return_ins_label
@@ -116,7 +106,7 @@ class SemanticKITTI(BaseDataset):
     def gen_config_template(cls):
         cfg_struct = {
             'name': 'SemanticKITTI',
-            'data_root': cls.default_str,
+            'data_root': '/data/semkitti/sequences',
             'return_rem': True,
             'kitti_yaml': "./config/semantic-kitti.yaml"
         }

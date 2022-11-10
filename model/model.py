@@ -1,26 +1,12 @@
 from torch import nn
 
-from utils.pf_base_class import PFBaseClass
-from model.cylinder3d_network import CylinderPointMLP, PointWiseRefinement
-from model.segmentator_3d_asymm_torchsparse import Asymm_3d_spconv
+from utils.pf_base_class import PFBaseClass, InterfaceBase
+from model.cy3d import CylinderPointMLP, PointWiseRefinement, Asymm_3d_spconv
 
 
-class ModelInterface(PFBaseClass):
-    MODEL = {}
 
-    @classmethod
-    def gen_config_template(cls, name=None):
-        assert name in cls.MODEL.keys(), f"Model {name} not found in {cls.MODEL.keys()}"
-        return cls.MODEL[name].gen_config_template()
-
-    @classmethod
-    def get_model(cls, name, config):
-        return cls.MODEL[name](config)
-
-    @staticmethod
-    def register(model_class):
-        ModelInterface.MODEL[model_class.__name__] = model_class
-        return model_class
+class ModelInterface(InterfaceBase):
+    REGISTER = {}
 
 
 class ModuleBaseClass(nn.Module):
@@ -51,7 +37,7 @@ class Cylinder3D(ModuleBaseClass):
         }
         return config
 
-    def __init__(self, model_config):
+    def __init__(self, **model_config):
         super().__init__()
         self.name = "Cylinder3D"
         self.point_wise_refinement = model_config["point_wise_refinement"]
@@ -71,14 +57,50 @@ class Cylinder3D(ModuleBaseClass):
             num_classes=model_config["num_classes"]
         )
 
-    def forward(self, data):
-        voxel_feats_st, skip_pt_feats = self.cylinder_3d_generator(data["point_feats_st"], data["p2v_indices"])
+    def forward(self, batch):
+        data = batch["Voxel"]
+
+        voxel_feats_st, skip_pt_feats = self.cylinder_3d_generator(data["point_feats_st"], data["p2v"])
 
         voxel_logits_st, voxel_feats_st = self.cylinder_3d_spconv_seg(voxel_feats_st)
 
         if self.point_wise_refinement:
-            logits = self.cylinder_3d_generate_logits(voxel_feats_st.F[data["v2p_indices"]], skip_pt_feats)
+            logits = self.cylinder_3d_generate_logits(voxel_feats_st.F[data["v2p"]], skip_pt_feats)
         else:
             logits = voxel_logits_st.F[data["v2p_indices"]]
 
         return logits, voxel_logits_st
+
+
+class CENet(ModuleBaseClass):
+
+    @classmethod
+    def gen_config_template(cls):
+        return {
+            "num_classes": 20,
+            "aux_loss": False
+        }
+
+    def __init__(self, **config):
+        super(CENet, self).__init__()
+        from model.cenet import HarDNet
+        self.model = HarDNet(config["num_classes"], config["aux_loss"])
+
+
+if __name__ == "__main__":
+    import time
+    import torch
+    import numpy as np
+    begin_time = time.time()
+    pt_features = torch.tensor(np.random.random((100000, 4))) * 100 - 50
+    from dataloader.data_pipeline import DataPipelineInterface
+    data = {"Point": pt_features}
+    cylize = DataPipelineInterface.gen_default("Cylindrical")
+    rangeproj = DataPipelineInterface.gen_default("RangeProject")
+    data.update(cylize(data["Point"], None))
+    data.update(rangeproj(data["Point"], None))
+
+    for model in ModelInterface.REGISTER.keys():
+        print(f"Testing {model}: ")
+        begin_time = time.time()
+
