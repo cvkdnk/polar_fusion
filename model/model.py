@@ -33,7 +33,8 @@ class Cylinder3D(ModuleBaseClass):
             "num_classes": 20,
             "use_norm": True,
             "init_size": 32,
-            "out_fea_dim": 256
+            "out_fea_dim": 256,
+            "mlp_channels": [64, 128, 256, 64]
         }
         return config
 

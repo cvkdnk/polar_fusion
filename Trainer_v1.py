@@ -65,7 +65,7 @@ if __name__ == "__main__":
     train_loader, *_ = builder.get_dataloader()
     trainer = pl.Trainer(
         max_epochs=40,
-        devices=2, accelerator="gpu", strategy="ddp",
+        accelerator="gpu",
         default_root_dir="./test_cenet"
     )
     trainer.fit(model=auto_model, train_dataloaders=train_loader)

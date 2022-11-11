@@ -18,12 +18,13 @@ class CylinderPointMLP(nn.Module):
             in_fea_dim=3,
             mlp_channels=None,
             out_pt_fea_dim=64,
-            fea_compre=None,
     ):
         super(CylinderPointMLP, self).__init__()
 
         if mlp_channels is None:
             mlp_channels = [in_fea_dim, 64, 128, 256, 64]
+        else:
+            mlp_channels = mlp_channels.insert(0, in_fea_dim)
 
         self.bn0 = nn.BatchNorm1d(mlp_channels[0])
         self.mlp = nn.ModuleList([
