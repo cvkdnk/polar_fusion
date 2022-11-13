@@ -102,24 +102,24 @@ def gen_from_base():
     with open("./config/base.yaml", 'r') as f:
         base_config = yaml.load(f, Loader=yaml.FullLoader)
     examine_config(base_config)
-    work_path = os.path.join(os.path.join("./config", base_config["Dirname"]))
+    work_path = os.path.join(os.path.join("./experiments", base_config["Dirname"]))
     os.makedirs(work_path, exist_ok=args.force)
     shutil.copy(
         "./config/base.yaml",
         os.path.join(work_path, "base.yaml")
     )
 
-    def create_3mode_dirs(path):
-        os.makedirs(os.path.join(path, "train"), exist_ok=args.force)
-        os.makedirs(os.path.join(path, "val"), exist_ok=args.force)
-        os.makedirs(os.path.join(path, "test"), exist_ok=args.force)
-
-    os.makedirs(os.path.join(work_path, "dataset"), exist_ok=args.force)
-    create_3mode_dirs(os.path.join(work_path, "pipeline"))
-    create_3mode_dirs(os.path.join(work_path, "dataloader"))
-    os.makedirs(os.path.join(work_path, "model"), exist_ok=args.force)
-    os.makedirs(os.path.join(work_path, "loss"), exist_ok=args.force)
-    os.makedirs(os.path.join(work_path, "optimizer"), exist_ok=args.force)
+    # def create_3mode_dirs(path):
+    #     os.makedirs(os.path.join(path, "train"), exist_ok=args.force)
+    #     os.makedirs(os.path.join(path, "val"), exist_ok=args.force)
+    #     os.makedirs(os.path.join(path, "test"), exist_ok=args.force)
+    #
+    # os.makedirs(os.path.join(work_path, "dataset"), exist_ok=args.force)
+    # create_3mode_dirs(os.path.join(work_path, "pipeline"))
+    # create_3mode_dirs(os.path.join(work_path, "dataloader"))
+    # os.makedirs(os.path.join(work_path, "model"), exist_ok=args.force)
+    # os.makedirs(os.path.join(work_path, "loss"), exist_ok=args.force)
+    # os.makedirs(os.path.join(work_path, "optimizer"), exist_ok=args.force)
     # os.makedirs(os.path.join(work_path, "scheduler"), exist_ok=args.force)
 
     config_template = {
@@ -139,8 +139,8 @@ def gen_from_base():
         "optimizer": OptimizerInterface.gen_config_template(base_config["Optimizer"]),
         # "scheduler": SchedulerInterface.gen_config_template(base_config["Scheduler"])
     }
-    save_tree(work_path, config_template, base_config)
-    gen_total_config(work_path, config=config_template)
+    # save_tree(work_path, config_template, base_config)
+    gen_config(work_path, config=config_template)
     scan_config(config_template, "")
     # with open(work_path + "/scheduler/"+ base_config["Scheduler"] +".yaml", 'w') as f:
     #     yaml.dump(config_template["scheduler"], f)
@@ -170,25 +170,15 @@ def load_config(config_path):
     if os.path.isfile(config_path):
         with open(config_path, 'r') as i:
             config = yaml.load(i, Loader=yaml.FullLoader)
-        if os.path.basename(config_path) == "total.yaml":
-            with open(config_path.replace("total", "base"), 'r') as i:
+        if os.path.basename(config_path) == "detail.yaml":
+            with open(config_path.replace("detail", "base"), 'r') as i:
+                config.update(yaml.load(i, Loader=yaml.FullLoader))
+        if os.path.basename(config_path) == "base.yaml":
+            with open(config_path.replace("base", "detail"), 'r') as i:
                 config.update(yaml.load(i, Loader=yaml.FullLoader))
         return config
     if os.path.isdir(config_path):
-        config = {}
-        total_config = None
-        for i in os.listdir(config_path):
-            if i == "total.yaml":
-                total_config = yaml.load(open(config_path+"/total.yaml", 'r'), Loader=yaml.FullLoader)
-            i_path = os.path.join(config_path, i)
-            if i.endswith(".yaml"):
-                with open(i_path, 'r') as f:
-                    config.update(yaml.load(f, Loader=yaml.FullLoader))
-            elif os.path.isdir(i_path):
-                config[i] = load_config(i_path)
-        if total_config is not None:
-            if total_config != config:
-                print("[WARNING]: total.yaml is not equal to the tree's config files. Loading the tree's config files.")
+        config = load_config(config_path+"/detail.yaml")
         return config
 
 
@@ -201,12 +191,12 @@ def total_cover_tree(config_path):
     print("Cover config files successfully.")
 
 
-def gen_total_config(config_path, config=None):
+def gen_config(config_path, config=None):
     if config is None:
         config = load_config(config_path)
-    with open(config_path + "/total.yaml", 'w') as f:
+    with open(config_path + "/detail.yaml", 'w') as f:
         yaml.dump(config, f, sort_keys=False)
-    print("Generate total config file successfully.")
+    print("Generate detail config file successfully.")
 
 
 def main(args):
@@ -215,7 +205,7 @@ def main(args):
     if args.update:
         update_base_config()
     if args.gen_total is not None:
-        gen_total_config(args.gen_total)
+        gen_config(args.gen_total)
     elif args.gen_from_total is not None:
         total_cover_tree(args.gen_from_total)
 
