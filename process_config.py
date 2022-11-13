@@ -36,7 +36,7 @@ def update_base_config():
         f.write("# Base config to generate config dir\n")
         f.write("# Last updated: " + str(datetime.datetime.now()) + "\n\n")
         f.write("# The param is where to store the generated config files, \n" + \
-                "# base path is {}\n".format(os.getcwd() + "/config"))
+                "# base path is {}\n".format(os.getcwd() + "/experiments"))
         f.write("Dirname: /path/to/store/configs\n\n")
 
         def write_tips(file, _dict):
