@@ -113,7 +113,7 @@ def nb_process_label(processed_label, sorted_label_voxel_pair):
     return processed_label
 
 
-def custom_collate_fn(inputs):  # TODO: complete collate function
+def custom_collate_fn(inputs):
     """Custom collate function to deal with batches that have different
     numbers of samples per gpu.
     """
@@ -124,10 +124,15 @@ def custom_collate_fn(inputs):  # TODO: complete collate function
                 output[name] = custom_collate_fn(
                     [input[name] for input in inputs])
             elif "list" in name:
-                output[name] = [input[name] for input in inputs]
-            elif "range_image" == name or "range_mask" == name or "r2p_indices" == name:
-                output[name] = torch.stack([torch.tensor(input[name]).unsqueeze(0) for input in inputs],
-                                           dim=0)
+                output[name] = [torch.tensor(input[name]) for input in inputs]
+            elif name in ["Point", "Label", "p2v", "v2p", "r2p"]:
+                output[name] = torch.concat(
+                    [torch.tensor(input[name]) for input in inputs], dim=0)
+            # elif "range_image" == name or "range_mask" == name or "r2p_indices" == name:
+            #     output[name] = torch.stack([torch.tensor(input[name]).unsqueeze(0) for input in inputs],
+            #                                dim=0)
+            # elif "Point" in name or "Label" in name or "seq" in name:
+            #     output[name] = torch.concat([torch.tensor(input[name]) for input in inputs], dim=0)
             elif isinstance(inputs[0][name], np.ndarray):
                 output[name] = torch.stack(
                     [torch.tensor(input[name]) for input in inputs], dim=0)

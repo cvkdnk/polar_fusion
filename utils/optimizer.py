@@ -6,6 +6,12 @@ from utils import PFBaseClass, InterfaceBase
 class OptimizerInterface(InterfaceBase):
     REGISTER = {}
 
+    @classmethod
+    def get(cls, name, config, params=None):
+        if isinstance(name, str):
+            return cls.REGISTER[name]()(params, **config)
+        raise TypeError
+
 
 @OptimizerInterface.register
 class Adam(PFBaseClass):
@@ -20,10 +26,9 @@ class Adam(PFBaseClass):
 
         }
 
-    @staticmethod
-    def __call__(self, **kwargs):
+    def __call__(self, params, **kwargs):
         kwargs["betas"] = tuple(kwargs["betas"])
-        return optim.Adam(**kwargs)
+        return optim.Adam(params, **kwargs)
 
 
 @OptimizerInterface.register
@@ -38,9 +43,8 @@ class SGD(PFBaseClass):
             'nesterov': False
         }
 
-    @staticmethod
-    def __call__(self, **kwargs):
-        return optim.SGD(**kwargs)
+    def __call__(self, params, **kwargs):
+        return optim.SGD(params, **kwargs)
 
 
 

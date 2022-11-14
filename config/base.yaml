@@ -1,9 +1,9 @@
 # Base config to generate config dir
-# Last updated: 2022-11-10 15:47:22.878934
+# Last updated: 2022-11-13 18:09:59.130835
 
 # The param is where to store the generated config files, 
-# base path is /home/neu-wang/cvkdnk/workspace/PolarFusion/config
-Dirname: test
+# base path is /root/autodl-tmp/polar_fusion/experiments
+Dirname: cy3d
 
 # [SemanticKITTI] [NuScenes]
 Dataset: SemanticKITTI

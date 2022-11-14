@@ -20,6 +20,15 @@ class LossInterface(InterfaceBase):
         else:
             raise TypeError("loss should be list or str")
 
+    @classmethod
+    def get(cls, name, config):
+        if isinstance(name, str):
+            return cls.REGISTER[name](**config)
+        elif isinstance(name, list):
+            return [cls.REGISTER[n](**config) for n in name]
+        class_type = cls.__name__.replace("Interface", "")
+        raise TypeError(f"{class_type} in base.yaml should be str or list")
+
 
 class BaseLoss(PFBaseClass):
     @classmethod
@@ -64,6 +73,6 @@ class LovaszSoftmax(BaseLoss):
 
     def __call__(self, pred, target):
         return lovasz_softmax(
-            pred, target,
+            nn.functional.softmax(pred), target,
             ignore=self.ignore
         )

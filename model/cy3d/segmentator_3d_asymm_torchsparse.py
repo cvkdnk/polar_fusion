@@ -77,12 +77,18 @@ class ResBlock(nn.Module):
 
 
 class UpBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, act_func=spnn.LeakyReLU):
+    def __init__(self, in_channels, out_channels, act_func=spnn.LeakyReLU, height_up=False):
         super(UpBlock, self).__init__()
-        self.up_block = nn.Sequential(
-            conv_block(conv3x3x3, act_func, in_channels, out_channels),
-            spnn.Conv3d(out_channels, out_channels, kernel_size=3, bias=False, transposed=True)
-        )
+        if height_up:
+            self.up_block = nn.Sequential(
+                conv_block(conv3x3x3, act_func, in_channels, out_channels),
+                spnn.Conv3d(out_channels, out_channels, kernel_size=3, stride=(2, 2, 2), bias=False, transposed=True)
+            )
+        else:
+            self.up_block = nn.Sequential(
+                conv_block(conv3x3x3, act_func, in_channels, out_channels),
+                spnn.Conv3d(out_channels, out_channels, kernel_size=3, stride=(2, 2, 1), bias=False, transposed=True)
+            )
         self.conv_x3 = nn.Sequential(
             conv_block(conv1x3x3, act_func, out_channels, out_channels),
             conv_block(conv3x1x3, act_func, out_channels, out_channels),
@@ -126,8 +132,8 @@ class Asymm_3d_spconv(nn.Module):
 
         self.upBlock4 = UpBlock(16*init_size, 16*init_size)
         self.upBlock3 = UpBlock(16 * init_size, 8 * init_size)
-        self.upBlock2 = UpBlock(8 * init_size, 4 * init_size)
-        self.upBlock1 = UpBlock(4 * init_size, 2 * init_size)
+        self.upBlock2 = UpBlock(8 * init_size, 4 * init_size, height_up=True)
+        self.upBlock1 = UpBlock(4 * init_size, 2 * init_size, height_up=True)
 
         self.DDCM = DDCM(2*init_size, 2*init_size)
         self.conv_logits = spnn.Conv3d(4*init_size, num_classes, kernel_size=3, stride=1, bias=True)

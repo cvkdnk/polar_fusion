@@ -1,4 +1,5 @@
 import os
+import torch
 from torch import optim, nn, utils, Tensor
 import numpy as np
 import pytorch_lightning as pl
@@ -15,13 +16,13 @@ class AutoModel(pl.LightningModule):
     def __init__(self, builder: Builder):
         super().__init__()
         self.builder = builder
-        self.model = builder.get_model()
-        self.loss, self.loss_weight = builder.get_loss()
+        self.model = builder.model
+        self.loss, self.loss_weight = builder.loss, builder.loss_weight
 
     def training_step(self, batch_data, batch_idx):
         labels = batch_data["Label"]
         vox_labels = labels[batch_data["Voxel"]["p2v"]]
-        logits, vox_logits_st = self.model(batch_data, labels)
+        logits, vox_logits_st = self.model(batch_data)
         if isinstance(self.loss, list):
             loss = 0
             for l, w in zip(self.loss, self.loss_weight):
@@ -32,14 +33,13 @@ class AutoModel(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        optimizer = self.builder.get_optimizer()
-        return optimizer
+        return self.builder.optimizer
 
     def validation_step(self, batch_data, batch_idx):
         # this is the validation loop
         labels = batch_data["Label"]
         vox_labels = labels[batch_data["Voxel"]["p2v"]]
-        logits, vox_logits_st = self.model(batch_data, labels)
+        logits, vox_logits_st = self.model(batch_data)
         if isinstance(self.loss, list):
             val_loss = 0
             for l, w in zip(self.loss, self.loss_weight):
@@ -48,7 +48,7 @@ class AutoModel(pl.LightningModule):
         else:
             val_loss = self.loss(logits, labels) + self.loss(vox_logits_st.F, vox_labels)
 
-        miou, iou_list, _ = mIoU(np.argmax(logits.numpy(), axis=1), labels,
+        miou, iou_list, _ = mIoU(np.argmax(logits.cpu().numpy(), axis=1), labels.cpu().numpy(),
                                  class_num=self.builder.config["model"]["num_classes"])
         self.log("val_loss", val_loss)
         self.log("val_mIoU", miou)
@@ -58,14 +58,14 @@ class AutoModel(pl.LightningModule):
 
 
 if __name__ == "__main__":
-    builder = Builder("./config/test/total.yaml")
-    wandb_logger = WandbLogger(project="test_cenet")
+    builder = Builder("./experiments/cy3d")
+    wandb_logger = WandbLogger(project="cy3d")
     auto_model = AutoModel(builder)
     wandb_logger.watch(auto_model)
-    train_loader, *_ = builder.get_dataloader()
+    train_loader, val_loader = builder.train_loader, builder.val_loader
     trainer = pl.Trainer(
         max_epochs=40,
         accelerator="gpu",
-        default_root_dir="./test_cenet"
+        default_root_dir="./experiments/cy3d"
     )
-    trainer.fit(model=auto_model, train_dataloaders=train_loader)
+    trainer.fit(model=auto_model, train_dataloaders=train_loader, val_dataloaders=val_loader)
