@@ -1,9 +1,6 @@
-# Base config to generate config dir
-# Last updated: 2022-11-13 18:09:59.130835
-
 # The param is where to store the generated config files, 
-# base path is /root/autodl-tmp/polar_fusion/experiments
-Dirname: cy3d
+# base path is /home/neu-wang/cvkdnk/workspace/PolarFusion/experiments
+Dirname: cylinder3d
 
 # [SemanticKITTI] [NuScenes]
 Dataset: SemanticKITTI
@@ -14,15 +11,12 @@ DataPipeline:
     train:
     - PointAugmentor
     - Cylindrical
-    - RangeProject
 
     val:
     - Cylindrical
-    - RangeProject
 
     test:
     - Cylindrical
-    - RangeProject
 
 # [Cylinder3D]
 Model: Cylinder3D
@@ -30,9 +24,9 @@ Model: Cylinder3D
 # [CrossEntropyLoss] [LovaszSoftmax]
 Loss:
 - CrossEntropyLoss
-- LovaszSoftmax
 
 # [Adam] [SGD]
 Optimizer: Adam
 
 # Complete the file and run [python process_config.py -g]
+

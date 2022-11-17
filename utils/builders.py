@@ -11,13 +11,12 @@ from process_config import load_config
 
 
 class Builder:
-    def __init__(self, config_path):
+    def __init__(self, config_path, device):
         self.config = load_config(config_path)
-        print(self.config["model"])
         self.kitti_yaml = yaml.safe_load(open("./config/semantic-kitti.yaml", 'r'))
         self.train_loader, self.val_loader, self.test_loader = self.get_dataloader()
         self.model = self.get_model()
-        self.loss, self.loss_weight = self.get_loss()
+        self.loss, self.loss_weight = self.get_loss(device=device)
         self.optimizer = self.get_optimizer(self.model.parameters())
 
     def get_dataloader(self):
@@ -60,16 +59,16 @@ class Builder:
         model = ModelInterface.get(self.config["Model"], self.config["model"])
         return model
 
-    def get_loss(self):
+    def get_loss(self, device):
         loss_name = self.config["Loss"]
         loss_weight = self.config["loss"]["loss_weight"]
         if isinstance(loss_name, list):
             loss = []
             for l in loss_name:
-                loss.append(LossInterface.get(l, self.config["loss"]))
+                loss.append(LossInterface.get(l, self.config["loss"], device))
             return loss, loss_weight
         elif isinstance(loss_name, str):
-            return LossInterface.get(loss_name, self.config["loss"]), None
+            return LossInterface.get(loss_name, self.config["loss"], device), None
 
     def get_optimizer(self, params):
         optimizer = OptimizerInterface.get(self.config["Optimizer"], self.config["optimizer"], params)

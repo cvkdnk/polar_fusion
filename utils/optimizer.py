@@ -7,7 +7,9 @@ class OptimizerInterface(InterfaceBase):
     REGISTER = {}
 
     @classmethod
-    def get(cls, name, config, params=None):
+    def get(cls, name, config: dict, params=None):
+        if "name" in config.keys():
+            config.pop("name")
         if isinstance(name, str):
             return cls.REGISTER[name]()(params, **config)
         raise TypeError

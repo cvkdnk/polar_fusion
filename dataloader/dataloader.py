@@ -87,14 +87,14 @@ class SemanticKITTI(BaseDataset):
 
     def __getitem__(self, item):
         test_mode = False if self.mode != 'test' else True
-        pt_features, sem_labels, ins_labels = SemKittiUtils.load_data(self.data_path[item],
-                                                                      return_ins_label=self.return_ins_label,
-                                                                      test_mode=test_mode)
+        pt_features, sem_labels, ins_labels, seq_frame = SemKittiUtils.load_data(self.data_path[item],
+                                                                                 self.return_ins_label,
+                                                                                 test_mode)
         sem_labels = label_mapping(sem_labels, self.kitti_config['learning_map'])
         if not self.return_ref:
             pt_features = pt_features[:, :3]
         points_num = sem_labels.shape[0]
-        return_dict = {"Point": pt_features, "Label": sem_labels, "PointsNum": points_num}
+        return_dict = {"Point": pt_features, "Label": sem_labels, "PointsNum": points_num, "SeqFrame": seq_frame}
         if self.return_ins_label:
             return_dict["InstanceLabel"] = ins_labels
         return return_dict

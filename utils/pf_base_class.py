@@ -13,7 +13,9 @@ class InterfaceBase(PFBaseClass):
     def gen_config_template(cls, name=None):
         if isinstance(name, str):
             assert name in cls.REGISTER.keys(), f"{name} not found in {cls.REGISTER.keys()}"
-            return cls.REGISTER[name].gen_config_template()
+            return_dict = {"name": name}
+            return_dict.update(cls.REGISTER[name].gen_config_template())
+            return return_dict
         else:
             raise ValueError
 

@@ -29,12 +29,15 @@ class SemKittiUtils:
         labels = np.fromfile(bin_path.replace("velodyne", "labels")[:-3]+"label", np.uint32)
         sem_labels = labels & 0xFFFF
         ins_labels = None
+        frame = os.path.splitext(os.path.basename(bin_path))[0]
+        seq = os.path.dirname(os.path.dirname(bin_path))[-2:]
+        seq_frame = seq+"_"+frame
         if return_ins_label:
             ins_labels = labels >> 16
         if return_ins_label:
-            return pt_features, sem_labels, ins_labels
+            return pt_features, sem_labels, ins_labels, seq_frame
         else:
-            return pt_features, sem_labels, ins_labels
+            return pt_features, sem_labels, ins_labels, seq_frame
 
 
 class NuScenesUtils:

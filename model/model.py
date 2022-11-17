@@ -4,7 +4,6 @@ from utils.pf_base_class import InterfaceBase
 from model.cy3d import CylinderPointMLP, PointWiseRefinement, Asymm_3d_spconv
 
 
-
 class ModelInterface(InterfaceBase):
     REGISTER = {}
 
