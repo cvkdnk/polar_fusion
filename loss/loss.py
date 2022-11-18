@@ -56,12 +56,13 @@ class CrossEntropyLoss(BaseLoss):
     def __init__(self, **config):
         super().__init__(**config)
         weight = self.config["weight"]
-        device = self.config["device"]
-        if isinstance(weight, list):
-            weight = np.array(weight, dtype=np.float32)
-        elif isinstance(weight, str):
-            weight = np.load(weight)
-        weight = torch.tensor(weight, dtype=torch.float32).to(device)
+        if weight is not None:
+            device = self.config["device"]
+            if isinstance(weight, list):
+                weight = np.array(weight, dtype=np.float32)
+            elif isinstance(weight, str):
+                weight = np.load(weight)
+            weight = torch.tensor(weight, dtype=torch.float32).to(device)
         self.loss = nn.CrossEntropyLoss(
             weight=weight,
             ignore_index=self.config["ignore"]
