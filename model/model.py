@@ -1,8 +1,7 @@
 from torch import nn
 
-from utils.pf_base_class import PFBaseClass, InterfaceBase
+from utils.pf_base_class import InterfaceBase
 from model.cy3d import CylinderPointMLP, PointWiseRefinement, Asymm_3d_spconv
-
 
 
 class ModelInterface(InterfaceBase):
@@ -29,12 +28,13 @@ class Cylinder3D(ModuleBaseClass):
             "point_wise_refinement": True,
             "output_shape": [480, 360, 32],
             "in_fea_dim": 9,
-            "num_input_features": 16,
+            "num_input_features": 64,
             "num_classes": 20,
             "use_norm": True,
             "init_size": 32,
             "out_fea_dim": 256,
-            "mlp_channels": [64, 128, 256, 64]
+            "mlp_channels": [64, 128, 256, 64],
+            "fea_compre": None
         }
         return config
 
@@ -45,7 +45,8 @@ class Cylinder3D(ModuleBaseClass):
         self.cylinder_3d_generator = CylinderPointMLP(
             in_fea_dim=model_config["in_fea_dim"],
             mlp_channels=model_config["mlp_channels"],
-            out_pt_fea_dim=model_config["out_fea_dim"]
+            out_pt_fea_dim=model_config["out_fea_dim"],
+            fea_compre=model_config["fea_compre"]
         )
         self.cylinder_3d_spconv_seg = Asymm_3d_spconv(
             num_input_feats=model_config["num_input_features"],
@@ -60,15 +61,17 @@ class Cylinder3D(ModuleBaseClass):
 
     def forward(self, batch):
         data = batch["Voxel"]
+        p2v = data["p2v"]
+        v2p = data["v2p"]
 
-        voxel_feats_st, skip_pt_feats = self.cylinder_3d_generator(data["point_feats_st"], data["p2v"])
+        voxel_feats_st, skip_pt_feats = self.cylinder_3d_generator(data["point_feats_st"], p2v)
 
         voxel_logits_st, voxel_feats_st = self.cylinder_3d_spconv_seg(voxel_feats_st)
 
         if self.point_wise_refinement:
-            logits = self.cylinder_3d_generate_logits(voxel_feats_st.F[data["v2p"]], skip_pt_feats)
+            logits = self.cylinder_3d_generate_logits(voxel_feats_st.F[v2p], skip_pt_feats)
         else:
-            logits = voxel_logits_st.F[data["v2p_indices"]]
+            logits = voxel_logits_st.F[v2p]
 
         return logits, voxel_logits_st
 
@@ -92,6 +95,7 @@ if __name__ == "__main__":
     import time
     import torch
     import numpy as np
+
     begin_time = time.time()
     pt_features = torch.tensor(np.random.random((100000, 4))) * 100 - 50
     from dataloader.data_pipeline import DataPipelineInterface
@@ -101,7 +105,12 @@ if __name__ == "__main__":
     data.update(cylize(data["Point"], None))
     data.update(rangeproj(data["Point"], None))
 
-    for model in ModelInterface.REGISTER.keys():
-        print(f"Testing {model}: ")
-        begin_time = time.time()
+    model = Cylinder3D(**Cylinder3D.gen_config_template())
+
+    logits = model(data)
+
+
+    # for model in ModelInterface.REGISTER.keys():
+    #     print(f"Testing {model}: ")
+    #     begin_time = time.time()
 

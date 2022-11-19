@@ -56,7 +56,7 @@ def update_base_config():
         f.write("Loss:\n- CrossEntropyLoss\n- LovaszSoftmax\n\n")
         write_tips(f, OptimizerInterface.REGISTER)
         f.write("Optimizer: Adam\n\n")
-        f.write("# Complete the file and run [python process_config.py -g]")
+        f.write("# Complete the file and run [python process_config.py -g]\n\n")
     print("Update base config file successfully.")
 
 
@@ -106,7 +106,7 @@ def gen_from_base():
     os.makedirs(work_path, exist_ok=args.force)
     shutil.copy(
         "./config/base.yaml",
-        os.path.join(work_path, "base.yaml")
+        os.path.join(work_path, "config.yaml")
     )
 
     # def create_3mode_dirs(path):
@@ -178,23 +178,23 @@ def load_config(config_path):
                 config.update(yaml.load(i, Loader=yaml.FullLoader))
         return config
     if os.path.isdir(config_path):
-        config = load_config(config_path+"/detail.yaml")
+        config = load_config(config_path+"/config.yaml")
         return config
 
 
-def total_cover_tree(config_path):
-    with open(config_path + "total.yaml", 'r') as f:
-        config = yaml.load(f, Loader=yaml.FullLoader)
-    with open(config_path + "base.yaml", 'r') as f:
-        base_config = yaml.load(f, Loader=yaml.FullLoader)
-    save_tree(config_path, config, base_config)
-    print("Cover config files successfully.")
+# def total_cover_tree(config_path):
+#     with open(config_path + "total.yaml", 'r') as f:
+#         config = yaml.load(f, Loader=yaml.FullLoader)
+#     with open(config_path + "base.yaml", 'r') as f:
+#         base_config = yaml.load(f, Loader=yaml.FullLoader)
+#     save_tree(config_path, config, base_config)
+#     print("Cover config files successfully.")
 
 
 def gen_config(config_path, config=None):
     if config is None:
         config = load_config(config_path)
-    with open(config_path + "/detail.yaml", 'w') as f:
+    with open(config_path + "/config.yaml", 'a') as f:
         yaml.dump(config, f, sort_keys=False)
     print("Generate detail config file successfully.")
 
@@ -206,8 +206,8 @@ def main(args):
         update_base_config()
     if args.gen_total is not None:
         gen_config(args.gen_total)
-    elif args.gen_from_total is not None:
-        total_cover_tree(args.gen_from_total)
+    # elif args.gen_from_total is not None:
+    #     total_cover_tree(args.gen_from_total)
 
 
 if __name__ == "__main__":

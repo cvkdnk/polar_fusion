@@ -13,12 +13,9 @@ class InterfaceBase(PFBaseClass):
     def gen_config_template(cls, name=None):
         if isinstance(name, str):
             assert name in cls.REGISTER.keys(), f"{name} not found in {cls.REGISTER.keys()}"
-            return {name: cls.REGISTER[name].gen_config_template()}
-        elif isinstance(name, list):
-            return_dict = {}
-            for n in name:
-                assert n in cls.REGISTER.keys(), f"{name} not found in {cls.REGISTER.keys()}"
-                return_dict[n] = cls.REGISTER[n].gen_config_template()
+            return_dict = {"name": name}
+            return_dict.update(cls.REGISTER[name].gen_config_template())
+            return return_dict
         else:
             raise ValueError
 
@@ -26,8 +23,6 @@ class InterfaceBase(PFBaseClass):
     def get(cls, name, config):
         if isinstance(name, str):
             return cls.REGISTER[name](**config)
-        elif isinstance(name, list):
-            return [cls.REGISTER[n](**config[n]) for n in name]
         class_type = cls.__name__.replace("Interface", "")
         raise TypeError(f"{class_type} in base.yaml should be str or list")
 
@@ -38,4 +33,4 @@ class InterfaceBase(PFBaseClass):
 
     @classmethod
     def gen_default(cls, name):
-        return cls.get(name, cls.gen_config_template(name)[name])
+        return cls.get(name, cls.gen_config_template(name))

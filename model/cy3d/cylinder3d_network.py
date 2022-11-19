@@ -18,19 +18,21 @@ class CylinderPointMLP(nn.Module):
             in_fea_dim=3,
             mlp_channels=None,
             out_pt_fea_dim=64,
+            fea_compre=False,
     ):
         super(CylinderPointMLP, self).__init__()
 
         if mlp_channels is None:
             mlp_channels = [in_fea_dim, 64, 128, 256, 64]
         else:
-            mlp_channels = mlp_channels.insert(0, in_fea_dim)
+            mlp_channels.insert(0, in_fea_dim)
 
         self.bn0 = nn.BatchNorm1d(mlp_channels[0])
         self.mlp = nn.ModuleList([
             point_mlp(mlp_channels[i], mlp_channels[i+1]) for i in range(len(mlp_channels)-1)
         ])
         self.gen_feats = nn.Linear(mlp_channels[-1], out_pt_fea_dim)
+        self.fea_compre = fea_compre
 
         if self.fea_compre is not None:
             self.fea_compression = nn.Sequential(
@@ -63,16 +65,16 @@ class PointWiseRefinement(nn.Module):
             mlp_channels = [64, 128, 256, 64]
         else:
             mlp_channels.pop(0)
-        mlp1 = point_mlp(4*init_size+mlp_channels[0], 8*init_size)
-        mlp2 = point_mlp(8*init_size+mlp_channels[1], 4*init_size)
-        mlp3 = point_mlp(4*init_size+mlp_channels[2], 2*init_size)
-        mlp4 = point_mlp(2*init_size+mlp_channels[3], init_size)
+        mlp1 = point_mlp(4*init_size+mlp_channels[3], 8*init_size)
+        mlp2 = point_mlp(8*init_size+mlp_channels[2], 4*init_size)
+        mlp3 = point_mlp(4*init_size+mlp_channels[1], 2*init_size)
+        mlp4 = point_mlp(2*init_size+mlp_channels[0], init_size)
         self.mlp = nn.ModuleList([mlp1, mlp2, mlp3, mlp4])
         self.gen_logits = nn.Linear(init_size, num_classes, bias=True)
 
     def forward(self, pt_feats, skip_pt_feats):
         for skip, mlp_module in zip(reversed(skip_pt_feats), self.mlp):
-            pt_feats = torch.cat((pt_feats, skip))
+            pt_feats = torch.cat((pt_feats, skip), dim=1)
             pt_feats = mlp_module(pt_feats)
         logits = self.gen_logits(pt_feats)
         return logits

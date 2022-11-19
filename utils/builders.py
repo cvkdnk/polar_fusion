@@ -11,20 +11,13 @@ from process_config import load_config
 
 
 class Builder:
-    def __init__(self, config_path):
+    def __init__(self, config_path, device):
         self.config = load_config(config_path)
         self.kitti_yaml = yaml.safe_load(open("./config/semantic-kitti.yaml", 'r'))
-        self.train_loader, val_loader, test_loader = self.get_dataloader()
+        self.train_loader, self.val_loader, self.test_loader = self.get_dataloader()
         self.model = self.get_model()
-        self.loss = self.get_loss()
-        self.optimizer = self.get_optimizer()
-
-    def build(self):
-        train_loader, val_loader, test_loader = self.get_dataloader()
-        model = self.get_model()
-        loss = self.get_loss()
-        optimizer = self.get_optimizer()
-        return train_loader, val_loader, test_loader, model, loss, optimizer
+        self.loss, self.loss_weight = self.get_loss(device=device)
+        self.optimizer = self.get_optimizer(self.model.parameters())
 
     def get_dataloader(self):
         dataflow = DatasetInterface.get(self.config["Dataset"], self.config["dataset"])
@@ -40,7 +33,7 @@ class Builder:
             def __getitem__(self, item):
                 data = self.dataset[item]
                 for dp in self.data_pipeline:
-                    data.update(dp(data["Point"], data["Label"]))
+                    data.update(dp(data))
                 return data
 
         train_dataset = DataPipeline(dataflow["train"],
@@ -66,17 +59,17 @@ class Builder:
         model = ModelInterface.get(self.config["Model"], self.config["model"])
         return model
 
-    def get_loss(self):
+    def get_loss(self, device):
         loss_name = self.config["Loss"]
         loss_weight = self.config["loss"]["loss_weight"]
         if isinstance(loss_name, list):
             loss = []
             for l in loss_name:
-                loss.append(LossInterface.get(l, **self.config["loss"]))
+                loss.append(LossInterface.get(l, self.config["loss"], device))
             return loss, loss_weight
         elif isinstance(loss_name, str):
-            return LossInterface.get(loss_name, **self.config["loss"]), None
+            return LossInterface.get(loss_name, self.config["loss"], device), None
 
-    def get_optimizer(self):
-        optimizer = OptimizerInterface.get(self.config["Optimizer"], **self.config["optimizer"])
+    def get_optimizer(self, params):
+        optimizer = OptimizerInterface.get(self.config["Optimizer"], self.config["optimizer"], params)
         return optimizer

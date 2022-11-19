@@ -11,6 +11,29 @@ class DataPipelineInterface(InterfaceBase):
     REGISTER = {}
 
     @classmethod
+    def gen_config_template(cls, name=None):
+        if isinstance(name, str):
+            assert name in cls.REGISTER.keys(), f"{name} not found in {cls.REGISTER.keys()}"
+            return {name: cls.REGISTER[name].gen_config_template()}
+        elif isinstance(name, list):
+            return_dict = {}
+            for n in name:
+                assert n in cls.REGISTER.keys(), f"{name} not found in {cls.REGISTER.keys()}"
+                return_dict[n] = cls.REGISTER[n].gen_config_template()
+            return return_dict
+        else:
+            raise ValueError
+
+    @classmethod
+    def get(cls, name, config):
+        if isinstance(name, str):
+            return cls.REGISTER[name](**config[name])
+        elif isinstance(name, list):
+            return [cls.REGISTER[n](**config[n]) for n in name]
+        class_type = cls.__name__.replace("Interface", "")
+        raise TypeError(f"{class_type} in base.yaml should be str or list")
+
+    @classmethod
     def gen_multi_view(cls, data, polar=True):
         if polar:
             pipeline = ["RangeProject", "Cylindrical"]
@@ -20,38 +43,36 @@ class DataPipelineInterface(InterfaceBase):
             data.update(cls.gen_default(pl)(data))
         return data
 
-    @staticmethod
-    def plt(data, save_path, save_name, kitti_yaml):
-        import open3d as o3d
-        import cv2, os
-        from utils.data_utils import label_mapping
-        if "Range" in data.keys():
-            # write range
-            range_image_depth = data["Range"]["range_image"][..., 0]
-            cv2.write(os.path.join(save_path, save_name+"_range_d.png"), range_image_depth)
-            if "Label" in data.keys():
-                labels = data["Label"]
-                range_labels = labels[data["Range"]["p2r"]]
-                range_labels = label_mapping(range_labels, kitti_yaml["learning_map_inv"])
-                range_color = np.zeros((range_labels.shape[0], range_labels.shape[1], 3), dtype=np.int32)
-                for i in range(range_labels.shape[0]):
-                    for j in range(range_labels.shape[1]):
-                        range_color[i, j] = np.array(kitti_yaml["color_map"][range_labels[i, j]])
-                cv2.write(os.path.join(save_path, save_name+"_range_bgr.png"), range_color)
-
-        # write point cloud
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(data["Point"][..., :3])
-        o3d.io.write_point_cloud(os.path.join(save_path, save_name+"_pt.xyz"), pcd)
-
-        # write voxel
-        voxel_grid = o3d.geometry.VoxelGrid()
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(data["Voxel"]["voxel_feats_st"].C.numpy())
-        voxel_grid.create_from_point_cloud(pcd, voxel_size=1)
-        o3d.io.write_voxel_grid(os.path.join(save_path, save_name+"_voxel.xyz"))
-
-
+    # @staticmethod
+    # def plt(data, save_path, save_name, kitti_yaml):
+    #     import open3d as o3d
+    #     import cv2, os
+    #     from utils.data_utils import label_mapping
+    #     if "Range" in data.keys():
+    #         # write range
+    #         range_image_depth = data["Range"]["range_image"][..., 0]
+    #         cv2.imwrite(os.path.join(save_path, save_name+"_range_d.png"), range_image_depth)
+    #         if "Label" in data.keys():
+    #             labels = data["Label"]
+    #             range_labels = labels[data["Range"]["p2r"]]
+    #             range_labels = label_mapping(range_labels, kitti_yaml["learning_map_inv"])
+    #             range_color = np.zeros((range_labels.shape[0], range_labels.shape[1], 3), dtype=np.int32)
+    #             for i in range(range_labels.shape[0]):
+    #                 for j in range(range_labels.shape[1]):
+    #                     range_color[i, j] = np.array(kitti_yaml["color_map"][range_labels[i, j]])
+    #             cv2.imwrite(os.path.join(save_path, save_name+"_range_bgr.png"), range_color)
+    #
+    #     # write point cloud
+    #     pcd = o3d.geometry.PointCloud()
+    #     pcd.points = o3d.utility.Vector3dVector(data["Point"][..., :3])
+    #     o3d.io.write_point_cloud(os.path.join(save_path, save_name+"_pt.xyz"), pcd)
+    #
+    #     # write voxel
+    #     voxel_grid = o3d.geometry.VoxelGrid()
+    #     pcd = o3d.geometry.PointCloud()
+    #     pcd.points = o3d.utility.Vector3dVector(data["Voxel"]["voxel_feats_st"].C.numpy())
+    #     voxel_grid.create_from_point_cloud(pcd, voxel_size=1)
+    #     o3d.io.write_voxel_grid(os.path.join(save_path, save_name+"_voxel.xyz"), )
 
 
 class DataPipelineBaseClass(PFBaseClass):
@@ -267,8 +288,8 @@ class Voxel(DataPipelineBaseClass):
 
         return {"Voxel": {
             "point_feats_st": point_feats_st,
-            "p2v_indices_list": p2v_indices,
-            "v2p_indices_list": v2p_indices,
+            "p2v": p2v_indices,
+            "v2p": v2p_indices,
         }}
 
 
