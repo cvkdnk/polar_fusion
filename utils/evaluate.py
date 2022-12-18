@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.metrics import confusion_matrix
 
 
-def mIoU(pred, gt, class_num=13) -> Tuple[float, list, list]:
+def mIoU(pred, gt, class_num=13, return_acc=False):
     """calc the mean IoU of pred based on gt
     Args::
         pred: shape of (num,) or (num, 3), int
@@ -29,4 +29,15 @@ def mIoU(pred, gt, class_num=13) -> Tuple[float, list, list]:
         gt_list.append(gt_classes[n])
     mean_iou = sum(iou_list) / float(class_num)
 
+    if return_acc:
+        gt_classes = np.array(gt_classes, dtype=np.float32)
+        positive_classes = np.array(positive_classes, dtype=np.float32)
+        true_positive_classes = np.array(true_positive_classes, dtype=np.float32)
+        aAcc = np.sum(true_positive_classes) / np.sum(gt_classes + 0.1)
+        accArray = true_positive_classes / (gt_classes + 0.1)
+        mAcc = np.mean(accArray)
+        return mean_iou, iou_list, gt_list, aAcc, mAcc, accArray
+
     return mean_iou, iou_list, gt_list
+
+
