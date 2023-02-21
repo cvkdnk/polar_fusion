@@ -94,6 +94,12 @@ class PointExtendChannel(DataPipelineBaseClass):
     RETURN_TYPE = "Point"
 
     def __init__(self, extend_dist=True, extend_pitch=True, extend_yaw=False):
+        """ 扩充数据维度，可选添加：距离、俯仰角、偏航角
+
+        :param extend_dist: 距远点坐标的距离
+        :param extend_pitch: 俯仰角
+        :param extend_yaw: 偏航角
+        """
         super().__init__()
         self.extend_dist = extend_dist
         self.extend_pitch = extend_pitch
@@ -234,16 +240,17 @@ class InsAugPointAugmentor(DataPipelineBaseClass):  # TODO: Complete this class
         raise NotImplementedError
 
 
-class InsPasteDrop(DataPipelineBaseClass):
-    RETURN_TYPE = "Point"
+# class InsPasteDrop(DataPipelineBaseClass):
+#     RETURN_TYPE = "Point"
 
 
 @DataPipelineInterface.register
-class Voxel(DataPipelineBaseClass):
+class VoxelTS(DataPipelineBaseClass):
     RETURN_TYPE = "Voxel"
 
     def __init__(self, **config):
-        super(Voxel, self).__init__()
+        """使用TorchSparse库完成体素化"""
+        super(VoxelTS, self).__init__()
         self.voxel_size = config["voxel_size"]
         self.fixed_volume_space = config["fixed_volume_space"]  # {inuse, max, min}
         self.max_voxel_num = config["max_voxel_num"]
@@ -294,11 +301,12 @@ class Voxel(DataPipelineBaseClass):
 
 
 @DataPipelineInterface.register
-class Cylindrical(DataPipelineBaseClass):
+class CylindricalTS(DataPipelineBaseClass):
     RETURN_TYPE = "Voxel"
 
     def __init__(self, **config):
-        super(Cylindrical, self).__init__()
+        """使用TorchSparse库完成柱坐标分区"""
+        super(CylindricalTS, self).__init__()
         self.fixed_volume_space = config["fixed_volume_space"]
         self.grid_shape = config["grid_shape"]
 
