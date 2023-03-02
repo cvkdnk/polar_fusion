@@ -11,7 +11,7 @@ from process_config import load_config
 
 
 class Builder:
-    def __init__(self, config_path, device):
+    def __init__(self, config_path, device='cpu'):
         self.config = load_config(config_path)
         self.kitti_yaml = yaml.safe_load(open("./config/semantic-kitti.yaml", 'r'))
         self.train_loader, self.val_loader, self.test_loader = self.get_dataloader()
@@ -20,6 +20,10 @@ class Builder:
         self.optimizer = self.get_optimizer(self.model.parameters())
 
     def get_dataloader(self):
+        """ 生成dataloader
+
+        :return:
+        """
         dataflow = DatasetInterface.get(self.config["Dataset"], self.config["dataset"])
 
         class DataPipeline(Dataset):

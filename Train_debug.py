@@ -90,7 +90,7 @@ if __name__ == "__main__":
     experiment_dir = os.path.join(work_dir, datetime.now().strftime("%m-%d_%H-%M"))
     os.makedirs(experiment_dir, exist_ok=True)
     shutil.copy(work_dir + "/config.yaml", experiment_dir + "/config.yaml")
-    wandb_logger = WandbLogger(save_dir=experiment_dir, project="cy3d", name="Testing")
+    wandb_logger = WandbLogger(save_dir=experiment_dir, project="cy3d", name="Testin3g")
     checkpoint_callback = ModelCheckpoint(monitor="val/mIoU",
                                           save_last=True, save_top_k=3, mode="max")
     auto_model = AutoModel(builder, experiment_dir)

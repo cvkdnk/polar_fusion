@@ -17,6 +17,16 @@ class DatasetInterface(InterfaceBase):
         }
         return dataflow
 
+    @classmethod
+    def get_default(cls, name):
+        config = cls.REGISTER[name].gen_config_template()
+        dataflow = {
+            "train": cls.REGISTER[name](mode="train", **config),
+            "val": cls.REGISTER[name](mode="val", **config),
+            "test": cls.REGISTER[name](mode="test", **config)
+        }
+        return dataflow
+
 
 class BaseDataset(PFBaseClass):
     """A base class for dataset"""

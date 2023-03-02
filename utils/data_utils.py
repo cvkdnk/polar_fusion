@@ -58,6 +58,7 @@ def label2word(labels, word_mapping, learning_map_inv=None):
 
 
 def cart2polar(input_xyz):
+    """return rho phi z ..."""
     rho = np.sqrt(input_xyz[..., 0] ** 2 + input_xyz[..., 1] ** 2)
     phi = np.arctan2(input_xyz[..., 1], input_xyz[..., 0])
     return np.hstack((rho.reshape(-1, 1), phi.reshape(-1, 1), input_xyz[..., 2:]))
