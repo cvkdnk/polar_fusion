@@ -301,12 +301,12 @@ class VoxelTS(DataPipelineBaseClass):
 
 
 @DataPipelineInterface.register
-class CylindricalTS(DataPipelineBaseClass):
+class CylinderTS(DataPipelineBaseClass):
     RETURN_TYPE = "Voxel"
 
     def __init__(self, **config):
         """使用TorchSparse库完成柱坐标分区"""
-        super(CylindricalTS, self).__init__()
+        super(CylinderTS, self).__init__()
         self.fixed_volume_space = config["fixed_volume_space"]
         self.grid_shape = config["grid_shape"]
 
@@ -479,3 +479,43 @@ class PolarBevProject(DataPipelineBaseClass):  # TODO: complete this
     def __call__(self, data):
         pt_features = data["Point"]
         return {"Bev": pt_features[..., 1:]}
+
+
+@DataPipelineInterface.register
+class CylinderSP(DataPipelineBaseClass):
+    RETURN_TYPE =
+
+    def __init__(self, **config):
+        super(CylinderSP, self).__init__()
+        self.fixed_volume_space = config["fixed_volume_space"]
+        self.grid_shape = config["grid_shape"]
+
+    @classmethod
+    def gen_config_template(cls):
+        return {
+            "fixed_volume_space": {
+                "inuse": False,
+                "max_volume_space": [50, np.pi, 2],
+                "min_volume_space": [-50, -np.pi, -4]
+            },
+            "grid_shape": [480, 360, 32]
+        }
+
+    def __call__(self, data):
+        pt_features = data["Point"]
+        coords = pt_features[..., :3]
+        coords_pol = cart2polar(coords)
+        max_bound = np.max(coords_pol, axis=0)
+        min_bound = np.min(coords_pol, axis=0)
+        if self.fixed_volume_space["inuse"]:
+            max_bound = np.asarray(self.fixed_volume_space["max_volume_space"])
+            min_bound = np.asarray(self.fixed_volume_space["min_volume_space"])
+            coords_pol = np.clip(coords_pol, min_bound, max_bound)
+            coords = polar2cart(coords_pol)
+        crop_range = max_bound - min_bound
+        grid_size = crop_range / self.grid_shape  # 格子的大小
+        if (grid_size == 0).any():
+            raise "grid_size is zero"
+        voxel_indices, p2v, v2p = sparse_quantize(
+            coords_pol - min_bound, tuple(grid_size), return_index=True, return_inverse=True
+        )
