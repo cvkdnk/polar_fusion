@@ -1,10 +1,16 @@
 import os
+
+import cv2
 import numba as nb
 import torch
+import logging
 from numba import jit
 import numpy as np
 from torchsparse import SparseTensor
 from torchsparse.utils.collate import sparse_collate
+
+
+logger = logging.getLogger(__name__)
 
 
 class SemKittiUtils:
@@ -24,7 +30,7 @@ class SemKittiUtils:
     def load_data(bin_path: str, return_ins_label=False, test_mode=False):
         pt_features = np.fromfile(bin_path, dtype=np.float32).reshape(-1, 4)
         if test_mode:
-            sem_labels = np.zeros(pt_features.shape[0], dtype=np.int32)
+            # sem_labels = np.zeros(pt_features.shape[0], dtype=np.int32)
             return pt_features, None
         labels = np.fromfile(bin_path.replace("velodyne", "labels")[:-3]+"label", np.uint32)
         sem_labels = labels & 0xFFFF
@@ -39,6 +45,29 @@ class SemKittiUtils:
         else:
             return pt_features, sem_labels, ins_labels, seq_frame
 
+    @staticmethod
+    def draw_rgb_pcd(points, labels, kitti_yaml, save_path):
+        """如果是Tensor，转换成ndarray处理"""
+        if isinstance(labels, torch.Tensor):
+            labels = labels.cpu().numpy()
+        if isinstance(points, torch.Tensor):
+            points = points.cpu().numpy()
+        if len(labels.shape) == 2 and labels.shape[1] != 1:
+            labels = np.argmax(labels, axis=1)
+        labels = np.vectorize(kitti_yaml["learning_map_inv"].__getitem__)(labels)
+        colors = np.array(list(map(kitti_yaml["color_map"].__getitem__, labels)))
+        save_array = np.concatenate((points, colors), axis=1)
+        np.savetxt(save_path, save_array, fmt="%f %f %f %d %d %d", delimiter=",")
+
+    @staticmethod
+    def draw_rgb_bev(img, kitti_yaml, save_path):
+        if isinstance(img, torch.Tensor):
+            img = img.cpu().numpy()
+        img_color = np.zeros((img.shape[0], img.shape[1], 3), dtype=np.uint8)
+        for i in range(img.shape[0]):
+            for j in range(img.shape[1]):
+                img_color[i, j] = kitti_yaml["color_map"][img[i, j]]
+        cv2.imwrite(save_path, img_color)
 
 class NuScenesUtils:
     """A set of utils used to process NuScenes dataset"""
@@ -68,7 +97,7 @@ def polar2cart(input_xyz_polar):
     # print(input_xyz_polar.shape)
     x = input_xyz_polar[..., 0] * np.cos(input_xyz_polar[..., 1])
     y = input_xyz_polar[..., 0] * np.sin(input_xyz_polar[..., 1])
-    return np.stack((x, y, input_xyz_polar[..., 2:]), axis=-1)
+    return np.hstack((x.reshape(-1, 1), y.reshape(-1, 1), input_xyz_polar[..., 2:]))
 
 
 # def cart2polar3d(input_xyz):
@@ -127,22 +156,28 @@ def custom_collate_fn(inputs):
             if isinstance(inputs[0][name], dict):
                 output[name] = custom_collate_fn(
                     [input[name] for input in inputs])
-            elif "list" in name:
+            elif "list" in name or name in ["sampling_index", "upsampling_index", "r2p"]:
                 output[name] = [torch.tensor(input[name]) for input in inputs]
-            elif name in ["Point", "Label", "p2v", "v2p", "r2p"]:
-                output[name] = torch.concat(
-                    [torch.tensor(input[name]) for input in inputs], dim=0)
+            # elif name in ["Point", "Label"]:
+            #     output[name] = torch.concat(
+            #         [torch.tensor(input[name]) for input in inputs], dim=0)
             # elif "range_image" == name or "range_mask" == name or "r2p_indices" == name:
             #     output[name] = torch.stack([torch.tensor(input[name]).unsqueeze(0) for input in inputs],
             #                                dim=0)
             # elif "Point" in name or "Label" in name or "seq" in name:
             #     output[name] = torch.concat([torch.tensor(input[name]) for input in inputs], dim=0)
             elif isinstance(inputs[0][name], np.ndarray):
-                output[name] = torch.stack(
-                    [torch.tensor(input[name]) for input in inputs], dim=0)
+                try:
+                    output[name] = torch.stack(
+                        [torch.tensor(input[name]) for input in inputs], dim=0)
+                except RuntimeError:
+                    output[name] = [torch.tensor(input[name]) for input in inputs]
             elif isinstance(inputs[0][name], torch.Tensor):
-                output[name] = torch.stack([input[name] for input in inputs],
-                                           dim=0)
+                try:
+                    output[name] = torch.stack([input[name] for input in inputs],
+                                               dim=0)
+                except RuntimeError:
+                    output[name] = [input[name] for input in inputs]
             elif isinstance(inputs[0][name], SparseTensor):
                 output[name] = sparse_collate([input[name] for input in inputs])
             else:
@@ -150,3 +185,26 @@ def custom_collate_fn(inputs):
         return output
     else:
         return inputs
+
+
+def batch_upsampling(voxel_feats, upsampling_inds):
+    point_feats = []
+    for unsample_index in upsampling_inds:
+        point_feats.append(voxel_feats[unsample_index])
+    if isinstance(point_feats[0], torch.Tensor):
+        point_feats = torch.cat(point_feats, dim=0)
+    elif isinstance(point_feats[0], np.ndarray):
+        point_feats = np.concatenate(point_feats, axis=0)
+    return point_feats
+
+
+def draw_acc(points, labels, preds, save_path):
+    """只接受Tensor类型，preds可以是one-hot编码，也可以是单个类别"""
+    if len(preds.shape) == 2 and preds.shape[1] != 1:
+        preds = torch.argmax(preds, dim=1)
+    pred_err = torch.zeros((labels.shape[0], 1), dtype=torch.int32)
+    pred_err[preds != labels] = 255
+    pc_plt = torch.cat((points.cpu(), pred_err), dim=1).numpy()
+    np.save_txt(save_path, pc_plt, fmt="%f", delimiter=",")
+    print("Saving {}".format(save_path))
+

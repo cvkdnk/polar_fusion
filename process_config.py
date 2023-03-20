@@ -6,7 +6,7 @@ from dataloader import DatasetInterface, DataPipelineInterface
 from model import ModelInterface
 from loss import LossInterface
 from utils.optimizer import OptimizerInterface
-from utils import PFBaseClass
+from utils.config_utils import *
 
 
 def parse_args():
@@ -37,7 +37,7 @@ def update_base_config():
         f.write("# Last updated: " + str(datetime.datetime.now()) + "\n\n")
         f.write("# The param is where to store the generated config files, \n" + \
                 "# base path is {}\n".format(os.getcwd() + "/experiments"))
-        f.write("Dirname: /path/to/store/configs\n\n")
+        f.write("Dirname: \n\n")
 
         def write_tips(file, _dict):
             for strline in yield_line_every5(_dict.keys()):
@@ -47,51 +47,19 @@ def update_base_config():
         f.write("Dataset: SemanticKITTI\n\n")
         write_tips(f, DataPipelineInterface.REGISTER)
         f.write("DataPipeline:\n")
-        for mode in ["train", "val", "test"]:
-            f.write(f"    {mode}:\n")
-            f.write("    - Cylindrical\n    - RangeProject\n\n")
+        f.write("    base:\n")
+        f.write("    - Cylindrical\n    - RangeProject\n\n")
+        f.write("    train:\n")
+        f.write("    - PointAugmentor  # cover the base pipeline\n\n")
         write_tips(f, ModelInterface.REGISTER)
-        f.write("Model: Cylinder3D\n\n")
+        f.write("Model: \n\n")
         write_tips(f, LossInterface.REGISTER)
-        f.write("Loss:\n- CrossEntropyLoss\n- LovaszSoftmax\n\n")
+        f.write("Loss: \n\n")
         write_tips(f, OptimizerInterface.REGISTER)
         f.write("Optimizer: Adam\n\n")
         f.write("# Complete the file and run [python process_config.py -g]\n\n")
     print("Update base config file successfully.")
-
-
-def examine_config(config):
-    """check if the config is valid (between model and data pipeline)."""
-    need_type = ModelInterface.REGISTER[config["Model"]].NEED_TYPE
-    assert need_type, "ERROR, the model have not define NEED_TYPE"
-    return_type_list = []
-    for mode in ['train', 'val', 'test']:
-        for data_pipeline in config["DataPipeline"][mode]:
-            return_type = DataPipelineInterface.REGISTER[data_pipeline].RETURN_TYPE
-            assert return_type, "ERROR, the data pipeline have not define RETURN_TYPE"
-            return_type_list.append(return_type)
-    for need_type_i in need_type.split(","):
-        assert need_type_i in return_type_list, "ERROR, the need type is not satisfied"
-
-
-def yield_line_every5(l):
-    """yield a string line every 5 elements"""
-    str_line = "#"
-    for idx, l_i in enumerate(l):
-        if idx % 5 == 0 and idx != 0:
-            yield str_line + "\n"
-            str_line = "#"
-        str_line += f" [{l_i}]"
-    yield str_line + "\n"
-
-
-def scan_config(config, path):
-    """When generating config files, scan the config file and print which params need to set"""
-    for k, v in config.items():
-        if isinstance(v, dict):
-            scan_config(v, path+"/"+k)
-        elif v == PFBaseClass.default_str:
-            print(k+" in "+path+" is not set.")
+    print("Please complete ./config/base.yaml and run [python process_config.py -g].")
 
 
 def gen_from_base():
@@ -102,13 +70,19 @@ def gen_from_base():
     with open("./config/base.yaml", 'r') as f:
         base_config = yaml.load(f, Loader=yaml.FullLoader)
     examine_config(base_config)
+    # 生成保存配置文件的路径并创建
     work_path = os.path.join(os.path.join("./experiments", base_config["Dirname"]))
-    os.makedirs(work_path, exist_ok=args.force)
+    try:
+        os.makedirs(work_path, exist_ok=args.force)
+    except FileExistsError:
+        print("ERROR, the config dir is existed, use [-f] to force cover it.")
+        raise FileExistsError("ERROR, the config dir is existed, use [-f] to force cover it.")
     shutil.copy(
         "./config/base.yaml",
         os.path.join(work_path, "config.yaml")
     )
 
+    # 以下是分类生成配置文件的代码，弃用
     # def create_3mode_dirs(path):
     #     os.makedirs(os.path.join(path, "train"), exist_ok=args.force)
     #     os.makedirs(os.path.join(path, "val"), exist_ok=args.force)
@@ -122,81 +96,59 @@ def gen_from_base():
     # os.makedirs(os.path.join(work_path, "optimizer"), exist_ok=args.force)
     # os.makedirs(os.path.join(work_path, "scheduler"), exist_ok=args.force)
 
+    # 生成config默认模板
     config_template = {
         "dataset": DatasetInterface.gen_config_template(base_config["Dataset"]),
         "pipeline": {
-            "train": DataPipelineInterface.gen_config_template(base_config["DataPipeline"]["train"]),
-            "val": DataPipelineInterface.gen_config_template(base_config["DataPipeline"]["val"]),
-            "test": DataPipelineInterface.gen_config_template(base_config["DataPipeline"]["test"])
+            "base": DataPipelineInterface.gen_config_template(base_config["DataPipeline"]["base"]),
         },
         "dataloader": {
-            "train": {"batch_size": 4, "shuffle": True, "num_workers": 4, "pin_memory": True, "drop_last": False},
-            "val": {"batch_size": 4, "num_workers": 4, "pin_memory": True},
-            "test": {"batch_size": 1, "num_workers": 4, "pin_memory": True}
+            "base": {"batch_size": 4, "num_workers": 4, "pin_memory": True},
+            "train": {"shuffle": True, "drop_last": False},
         },
         "model": ModelInterface.gen_config_template(base_config["Model"]),
         "loss": LossInterface.gen_config_template(base_config["Loss"]),
         "optimizer": OptimizerInterface.gen_config_template(base_config["Optimizer"]),
         # "scheduler": SchedulerInterface.gen_config_template(base_config["Scheduler"])
     }
+    for mode in ["train", "val", "test"]:
+        if mode in base_config["DataPipeline"]:
+            config_template["pipeline"][mode] = DataPipelineInterface.gen_config_template(
+                base_config["DataPipeline"]["train"])
+    # 分类生成配置文件的代码，已弃用
     # save_tree(work_path, config_template, base_config)
     gen_config(work_path, config=config_template)
-    scan_config(config_template, "")
+    # scan_config(config_template, "")
     # with open(work_path + "/scheduler/"+ base_config["Scheduler"] +".yaml", 'w') as f:
     #     yaml.dump(config_template["scheduler"], f)
-    print("Generate config files successfully.")
-
-
-def save_tree(config_path, config, base_config):
-    with open(os.path.join(config_path, "dataset", base_config["Dataset"] + ".yaml"), 'w') as f:
-        yaml.dump(config["dataset"], f, sort_keys=False)
-    for mode in ["train", "val", "test"]:
-        with open(os.path.join(config_path, "pipeline", mode, mode + "_pipeline.yaml"), 'w') as f:
-            yaml.dump(config["pipeline"][mode], f, sort_keys=False)
-        with open(os.path.join(config_path, "dataloader", mode, mode + "_dataloader.yaml"), 'w') as f:
-            yaml.dump(config["dataloader"][mode], f, sort_keys=False)
-    with open(config_path + "/model/" + base_config["Model"] + ".yaml", 'w') as f:
-        yaml.dump(config["model"], f, sort_keys=False)
-    with open(config_path + "/loss/loss.yaml", 'w') as f:
-        yaml.dump(config["loss"], f, sort_keys=False)
-    with open(config_path + "/optimizer/" + base_config["Optimizer"] + ".yaml", 'w') as f:
-        yaml.dump(config["optimizer"], f, sort_keys=False)
-
-
-def load_config(config_path):
-    """load config file"""
-    if not os.path.exists(config_path):
-        raise FileNotFoundError("ERROR, config file not found.")
-    if os.path.isfile(config_path):
-        with open(config_path, 'r') as i:
-            config = yaml.load(i, Loader=yaml.FullLoader)
-        if os.path.basename(config_path) == "detail.yaml":
-            with open(config_path.replace("detail", "base"), 'r') as i:
-                config.update(yaml.load(i, Loader=yaml.FullLoader))
-        if os.path.basename(config_path) == "base.yaml":
-            with open(config_path.replace("base", "detail"), 'r') as i:
-                config.update(yaml.load(i, Loader=yaml.FullLoader))
-        return config
-    if os.path.isdir(config_path):
-        config = load_config(config_path+"/config.yaml")
-        return config
-
-
-# def total_cover_tree(config_path):
-#     with open(config_path + "total.yaml", 'r') as f:
-#         config = yaml.load(f, Loader=yaml.FullLoader)
-#     with open(config_path + "base.yaml", 'r') as f:
-#         base_config = yaml.load(f, Loader=yaml.FullLoader)
-#     save_tree(config_path, config, base_config)
-#     print("Cover config files successfully.")
+    print("Generate config files successfully, in {}".format(work_path+"/config.yaml"))
 
 
 def gen_config(config_path, config=None):
     if config is None:
         config = load_config(config_path)
     with open(config_path + "/config.yaml", 'a') as f:
-        yaml.dump(config, f, sort_keys=False)
+        f.write("##################################\n")
+        f.write("# Detail Config:##################\n")
+        for k in config:
+            f.write("# " + k + "====================\n")
+            yaml.dump({k: config[k]}, f, sort_keys=False)
     print("Generate detail config file successfully.")
+
+
+def examine_config(config):
+    """check if the config is valid (between model and data pipeline)."""
+    need_type = ModelInterface.REGISTER[config["Model"]].NEED_TYPE
+    assert need_type, "ERROR, the model have not define NEED_TYPE"
+    return_type_list = []
+    for mode in ['base', 'train', 'val', 'test']:
+        if mode in config["DataPipeline"]:
+            for data_pipeline in config["DataPipeline"][mode]:
+                return_type = DataPipelineInterface.REGISTER[data_pipeline].RETURN_TYPE
+                assert return_type, "ERROR, the data pipeline have not define RETURN_TYPE"
+                return_type_list.append(return_type)
+    for need_type_i in need_type.split(","):
+        assert need_type_i in return_type_list, "ERROR, the need type is not satisfied"
 
 
 def main(args):

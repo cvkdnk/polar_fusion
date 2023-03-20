@@ -1,9 +1,13 @@
 import numpy as np
+import logging
 from torchsparse import nn as spnn
 from torchsparse import SparseTensor
 from torchsparse.nn.utils import fapply
 import torch
 from torch import nn
+
+
+logger = logging.getLogger("Cylinder3D")
 
 
 class SpnnSigmoid(nn.Sigmoid):

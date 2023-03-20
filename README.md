@@ -59,3 +59,6 @@
 编写新的模型接口类与上述添加新自定义类的要求类似，新的接口类需要继承`ModuleBaseClass`类并重写`gen_config_template`方法，以及与模型类一样，重写`forward`方法。最后请用`@ModelInterface.register`装饰该模型接口类。
 
 
+## 测试
+
+在项目根目录开启Python控制台，通过`from test_interface import get_builder` 以及 `builder = get_builder(work_dir)`来获取一个builder类，其中work_dir为配置文件所在目录。然后，通过builder类的成员函数来获取模型、数据、损失函数等对象。例如，通过`builder.get_model()`来获取模型对象，通过`builder.get_dataloader()`来获取数据加载器对象。 

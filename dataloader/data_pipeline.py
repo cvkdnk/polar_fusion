@@ -1,10 +1,11 @@
+import logging
 import numpy as np
 import torch
 from torchsparse import SparseTensor
 from torchsparse.utils.quantize import sparse_quantize
 
 from utils.pf_base_class import PFBaseClass, InterfaceBase
-from utils.data_utils import cart2polar, polar2cart, cart2spherical
+from utils.data_utils import cart2polar, polar2cart, cart2spherical, nb_process_label
 
 
 class DataPipelineInterface(InterfaceBase):
@@ -83,6 +84,7 @@ class DataPipelineBaseClass(PFBaseClass):
         raise NotImplementedError
 
     def __init__(self):
+        self.logger = logging.getLogger(self.__class__.__name__)
         if self.RETURN_TYPE is None:
             raise NotImplementedError
 
@@ -301,14 +303,15 @@ class VoxelTS(DataPipelineBaseClass):
 
 
 @DataPipelineInterface.register
-class CylinderTS(DataPipelineBaseClass):
+class Cylindrical(DataPipelineBaseClass):
     RETURN_TYPE = "Voxel"
 
-    def __init__(self, **config):
+    def __init__(self, ignore_label=0, **config):
         """使用TorchSparse库完成柱坐标分区"""
-        super(CylinderTS, self).__init__()
+        super(Cylindrical, self).__init__()
         self.fixed_volume_space = config["fixed_volume_space"]
-        self.grid_shape = config["grid_shape"]
+        self.grid_shape = np.array(config["grid_shape"])
+        self.ignore_label = ignore_label
 
     @classmethod
     def gen_config_template(cls):
@@ -316,67 +319,74 @@ class CylinderTS(DataPipelineBaseClass):
             "fixed_volume_space": {
                 "inuse": False,
                 "max_volume_space": [50, np.pi, 2],
-                "min_volume_space": [-50, -np.pi, -4]
+                "min_volume_space": [0, -np.pi, -4]
             },
             "grid_shape": [480, 360, 32]
         }
 
     def __call__(self, data):
-        """return: point_features, voxel_start_coords, p2v, v2p"""
+        """由原始点云的数据生成点特征、体素特征和稀疏体素坐标等信息。
+
+        原始点云提供x,y,z,(r)的特征，由xyz生成极坐标（柱分区）rho phi z。通过
+        极坐标来划分体素，并且由点特征生成体素空间下每个点的新特征，包括：(x,y,z,rho,phi,点到体素块中心的坐标差rho,phi,z,还有个r)
+
+        由点云划分体素时得到的每个点所在体素块坐标作为点的SparseTensor.C，点的特征作为.F。
+        每个点的体素块坐标通过unique操作后可以得到所有有效体素块的坐标，也就是稀疏体素块的数据形式。以上操作均可以通过
+        torchsparse库中的方法完成。得到的有效体素块坐标作为体素的SparseTensor.C，此时可以通过简单地unique进行体素下采样生成体素
+        特征，即voxel_feats = point_feats[indices]，但只是临时特征，模型内可以通过scatter_max生成更好的体素特征。
+
+        最终返回值中，前两个元素如上所述，
+        position_coords_st保存了点和体素的坐标，点的在.F中包括(rho,phi,z,x,y)，体素的.C则为每个点所在体素块的坐标。
+        sampling_index和unsampling_index是下采样和上采样的索引，其中sampling_index如果使用了scatter_max则不需要，它是简单地保留
+        体素块中最先出现的点的索引。unsampling_index可以在体素特征映射回点时使用。
+        """
         pt_features = data["Point"]
-        xyz = pt_features[..., :3]
-        xyz_pol = cart2polar(xyz)
-        max_bound = np.max(xyz_pol, axis=-2)
-        min_bound = np.min(xyz_pol, axis=-2)
+        labels = data["Label"]
+        coords = pt_features[..., :3]
+        coords_pol = cart2polar(coords)
+        max_bound = np.max(coords_pol, axis=-2)
+        min_bound = np.min(coords_pol, axis=-2)
         if self.fixed_volume_space["inuse"]:
             max_bound = np.asarray(self.fixed_volume_space["max_volume_space"])
             min_bound = np.asarray(self.fixed_volume_space["min_volume_space"])
-            xyz_pol = np.clip(xyz_pol, min_bound, max_bound)
-            xyz = polar2cart(xyz_pol)
+            coords_pol = np.clip(coords_pol, min_bound, max_bound)
+            coords = polar2cart(coords_pol)
         # get grid index
         crop_range = max_bound - min_bound
-        grid_size = crop_range / self.grid_shape
+        grid_size = crop_range / (self.grid_shape - 1)
         if (grid_size == 0).any():
             print("Zero interval!")
-        voxel_coords, p2v, v2p = sparse_quantize(
-            xyz_pol - min_bound, tuple(grid_size), return_index=True, return_inverse=True
-        )
 
-        voxel_coords_pol = voxel_coords * grid_size + min_bound
+        voxel_coords = ((coords_pol - min_bound) // grid_size).astype(np.int64)
+
+        # valid_voxel_coords, upsampling_index = sparse_quantize(
+        #     coords_pol - min_bound, tuple(grid_size), return_inverse=True
+        # )
+        # voxel_coords = valid_voxel_coords[upsampling_index]
+
         # center data on each voxel for PTnet
-        voxel_centers_pol = voxel_coords_pol + 0.5 * grid_size
+        voxel_centers_pol = (voxel_coords + 0.5) * grid_size + min_bound
 
-        return_xyz = xyz_pol - voxel_centers_pol[v2p]
-        # maybe not use regression xy
-        # return_xyz = np.concatenate([
-        #         return_xyz,
-        #         xyz[..., :2]-polar2cart(voxel_centers_pol)[..., :2][v2p]
-        #     ], axis=-1)
-        return_xyz = np.concatenate((xyz, xyz_pol[..., :2], return_xyz), axis=-1)
+        return_xyz = coords_pol - voxel_centers_pol
+
+        return_xyz = np.concatenate((coords, coords_pol[..., :2], return_xyz), axis=-1)
+        pos_coords = np.concatenate((coords_pol, coords[..., :2]), axis=-1)  # rho phi z x y
 
         if pt_features.shape[1] == 3:
             return_fea = return_xyz
         else:
             return_fea = np.concatenate((return_xyz, pt_features[:, 3:]), axis=-1)
 
-        point_feats_st = SparseTensor(
-            feats=torch.tensor(return_fea, dtype=torch.float32),
-            coords=voxel_coords[v2p]
-        )
-        voxel_feats_st = SparseTensor(
-            feats=torch.tensor(return_fea[p2v], dtype=torch.float32),
-            coords=voxel_coords
-        )
+        vox_labels = np.ones(self.grid_shape, dtype=np.uint8) * self.ignore_label
+        label_voxel_pair = np.concatenate([voxel_coords, labels.reshape(-1, 1)], axis=1)
+        label_voxel_pair = label_voxel_pair[np.lexsort((voxel_coords[:, 0], voxel_coords[:, 1], voxel_coords[:, 2]))]
+        vox_labels = nb_process_label(np.copy(vox_labels), label_voxel_pair)
 
         return {"Voxel": {
-            "point_feats_st": point_feats_st,
-            "voxel_feats_st": voxel_feats_st,
-            "p2v": p2v,
-            "v2p": v2p,
+            "pt_feats": return_fea.astype(np.float32),
+            "pt_vox_coords": voxel_coords,
+            "dense_vox_labels": vox_labels.astype(np.int64)
         }}
-
-    def draw(self, data):
-        pass
 
 
 @DataPipelineInterface.register
@@ -481,41 +491,35 @@ class PolarBevProject(DataPipelineBaseClass):  # TODO: complete this
         return {"Bev": pt_features[..., 1:]}
 
 
-@DataPipelineInterface.register
-class CylinderSP(DataPipelineBaseClass):
-    RETURN_TYPE =
-
-    def __init__(self, **config):
-        super(CylinderSP, self).__init__()
-        self.fixed_volume_space = config["fixed_volume_space"]
-        self.grid_shape = config["grid_shape"]
-
-    @classmethod
-    def gen_config_template(cls):
-        return {
-            "fixed_volume_space": {
-                "inuse": False,
-                "max_volume_space": [50, np.pi, 2],
-                "min_volume_space": [-50, -np.pi, -4]
-            },
-            "grid_shape": [480, 360, 32]
-        }
-
-    def __call__(self, data):
-        pt_features = data["Point"]
-        coords = pt_features[..., :3]
-        coords_pol = cart2polar(coords)
-        max_bound = np.max(coords_pol, axis=0)
-        min_bound = np.min(coords_pol, axis=0)
-        if self.fixed_volume_space["inuse"]:
-            max_bound = np.asarray(self.fixed_volume_space["max_volume_space"])
-            min_bound = np.asarray(self.fixed_volume_space["min_volume_space"])
-            coords_pol = np.clip(coords_pol, min_bound, max_bound)
-            coords = polar2cart(coords_pol)
-        crop_range = max_bound - min_bound
-        grid_size = crop_range / self.grid_shape  # 格子的大小
-        if (grid_size == 0).any():
-            raise "grid_size is zero"
-        voxel_indices, p2v, v2p = sparse_quantize(
-            coords_pol - min_bound, tuple(grid_size), return_index=True, return_inverse=True
-        )
+# class CylinderSpconv(DataPipelineBaseClass):
+#     RETURN_TYPE = "Voxel"
+#
+#     def __init__(self, **config):
+#         super(CylinderSpconv, self).__init__()
+#         self.fixed_volume_space = config["fixed_volume_space"]
+#         self.grid_shape = config["grid_shape"]
+#
+#     @classmethod
+#     def gen_config_template(cls):
+#         return {
+#             "fixed_volume_space": {
+#                 "inuse": False,
+#                 "max_volume_space": [50, np.pi, 2],
+#                 "min_volume_space": [-50, -np.pi, -4]
+#             },
+#             "grid_shape": [480, 360, 32]
+#         }
+#
+#     def __call__(self, data):
+#         pt_features = data["Point"]
+#         coords = pt_features[..., :3]
+#         coords_pol = cart2polar(coords)
+#         max_bound = np.max(coords_pol, axis=-2)
+#         min_bound = np.min(coords_pol, axis=-2)
+#         if self.fixed_volume_space["inuse"]:
+#             max_bound = np.asarray(self.fixed_volume_space["max_volume_space"])
+#             min_bound = np.asarray(self.fixed_volume_space["min_volume_space"])
+#         crop_range = max_bound - min_bound
+#         voxel_size = crop_range / self.grid_shape
+#
+#         voxel_position = np.indices(self.grid_shape) *

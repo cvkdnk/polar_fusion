@@ -4,25 +4,7 @@
 
 from torch import nn
 
-REGISTERED_MODELS_CLASSES = {}
 
-
-def register_model(cls, name=None):
-    global REGISTERED_MODELS_CLASSES
-    if name is None:
-        name = cls.__name__
-    assert name not in REGISTERED_MODELS_CLASSES, f"exist class: {REGISTERED_MODELS_CLASSES}"
-    REGISTERED_MODELS_CLASSES[name] = cls
-    return cls
-
-
-def get_model_class(name):
-    global REGISTERED_MODELS_CLASSES
-    assert name in REGISTERED_MODELS_CLASSES, f"available class: {REGISTERED_MODELS_CLASSES}"
-    return REGISTERED_MODELS_CLASSES[name]
-
-
-@register_model
 class cylinder_asym(nn.Module):
     def __init__(self,
                  cylin_model,
@@ -39,6 +21,7 @@ class cylinder_asym(nn.Module):
         self.sparse_shape = sparse_shape
 
     def forward(self, train_pt_fea_ten, train_vox_ten, batch_size):
+        """train_pt_fea_ten是点特征，train_vox_ten是点对应的体素索引"""
         coords, features_3d = self.cylinder_3d_generator(train_pt_fea_ten, train_vox_ten)
 
         spatial_features = self.cylinder_3d_spconv_seg(features_3d, coords, batch_size)

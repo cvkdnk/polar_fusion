@@ -68,11 +68,16 @@ class BaseDataset(PFBaseClass):
 
 @DatasetInterface.register
 class SemanticKITTI(BaseDataset):
-    test_config = {
-        'data_root': '/data/semantickitti/sequences',
-        'return_rem': True,
-        'kitti_yaml': "./config/semantic-kitti.yaml"
-    }
+    @classmethod
+    def gen_config_template(cls):
+        cfg_struct = {
+            'name': 'SemanticKITTI',
+            'data_root': '/data/semkitti/sequences',
+            'return_rem': True,
+            'kitti_yaml': "./config/semantic-kitti.yaml",
+            "ignore": 0
+        }
+        return cfg_struct
 
     def __init__(self, mode='train', return_ins_label=False, **ds_config):
         super(SemanticKITTI, self).__init__()
@@ -111,16 +116,6 @@ class SemanticKITTI(BaseDataset):
 
     def __len__(self):
         return len(self.data_path)
-
-    @classmethod
-    def gen_config_template(cls):
-        cfg_struct = {
-            'name': 'SemanticKITTI',
-            'data_root': '/data/semkitti/sequences',
-            'return_rem': True,
-            'kitti_yaml': "./config/semantic-kitti.yaml"
-        }
-        return cfg_struct
 
 
 @DatasetInterface.register

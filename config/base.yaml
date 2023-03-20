@@ -1,14 +1,14 @@
 # Base config to generate config dir
-# Last updated: 2022-11-10 15:47:22.878934
+# Last updated: 2023-03-07 15:33:26.149404
 
 # The param is where to store the generated config files, 
-# base path is /home/neu-wang/cvkdnk/workspace/PolarFusion/config
-Dirname: test
+# base path is /home/cls2021/cvkdnk/workspace/PolarFusion/experiments
+Dirname: cylinder3d
 
 # [SemanticKITTI] [NuScenes]
 Dataset: SemanticKITTI
 
-# [PointAugmentor] [InsAugPointAugmentor] [Voxel] [Cylindrical] [RangeProject]
+# [PointAugmentor] [InsAugPointAugmentor] [VoxelTS] [Cylindrical] [RangeProject]
 # [BevProject] [PolarBevProject]
 DataPipeline:
     train:
@@ -24,8 +24,8 @@ DataPipeline:
     - Cylindrical
     - RangeProject
 
-# [Cylinder3D]
-Model: Cylinder3D
+# [Cylinder3DTS]
+Model: Cylinder3DTS
 
 # [CrossEntropyLoss] [LovaszSoftmax]
 Loss:
@@ -36,3 +36,4 @@ Loss:
 Optimizer: Adam
 
 # Complete the file and run [python process_config.py -g]
+
