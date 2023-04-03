@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torchsparse import SparseTensor
+import torch_scatter
 
 
 def point_mlp(fea_in, fea_out):
@@ -40,7 +41,17 @@ class CylinderPointMLP(nn.Module):
                 nn.ReLU()
             )
 
-    def forward(self, point_feats_st, p2v_indices):
+    def forward(self, point_feats_st, voxel_feats_st, upsampling_index=None):
+        if upsampling_index is None:
+            upsampling_index = torch.unique(point_feats_st.coords, return_inverse=True, dim=0)[1]
+        if isinstance(upsampling_index, list):
+            batch_coords = voxel_feats_st.C[..., 3]
+            batch_voxel_num = 0
+            for i in range(len(upsampling_index)):
+                batch_mask = batch_coords == i
+                upsampling_index[i] += batch_voxel_num
+                batch_voxel_num += torch.sum(batch_mask)
+            upsampling_index = torch.cat(upsampling_index, dim=0)
         # process feature
         processed_pt_feats = self.bn0(point_feats_st.feats)
         skip_pt_feats = []
@@ -50,12 +61,19 @@ class CylinderPointMLP(nn.Module):
 
         if self.fea_compre is not None:
             processed_pt_feats = self.fea_compression(processed_pt_feats)
-
-        vox_feats_st = SparseTensor(
-            feats=processed_pt_feats[p2v_indices],
-            coords=point_feats_st.C[p2v_indices]
+        new_pt_feats_st = SparseTensor(
+            feats=processed_pt_feats,
+            coords=point_feats_st.coords,
         )
-        return vox_feats_st, skip_pt_feats
+        # voxel feature
+        pool_feats = torch_scatter.scatter_max(
+            processed_pt_feats,
+            upsampling_index,
+            dim=0
+        )[0]
+
+        voxel_feats_st.feats = pool_feats
+        return new_pt_feats_st, voxel_feats_st, skip_pt_feats
 
 
 class PointWiseRefinement(nn.Module):

@@ -1,29 +1,28 @@
+# Base config to generate config dir
+# Last updated: 2023-03-23 22:48:56.673983
+
 # The param is where to store the generated config files, 
-# base path is /home/neu-wang/cvkdnk/workspace/PolarFusion/experiments
-Dirname: cylinder3d
+# base path is /home/cls2021/cvkdnk/workspace/PolarFusion/experiments
+Dirname: fix_iou 
 
 # [SemanticKITTI] [NuScenes]
 Dataset: SemanticKITTI
 
-# [PointAugmentor] [InsAugPointAugmentor] [Voxel] [Cylindrical] [RangeProject]
-# [BevProject] [PolarBevProject]
+# [PointAugmentor] [InsAugPointAugmentor] [Cylindrical] [RangeProject] [BevProject]
+# [PolarBevProject]
 DataPipeline:
+    base:
+    - Cylindrical
+    - RangeProject
+
     train:
-    - PointAugmentor
-    - Cylindrical
+    - PointAugmentor  # cover the base pipeline
 
-    val:
-    - Cylindrical
+# [Cylinder3DSPConv]
+Model: Cylinder3DSPConv
 
-    test:
-    - Cylindrical
-
-# [Cylinder3D]
-Model: Cylinder3D
-
-# [CrossEntropyLoss] [LovaszSoftmax]
-Loss:
-- CrossEntropyLoss
+# [VoxelWCE] [VoxelLovasz] [VoxelWCELovasz]
+Loss: VoxelWCELovasz
 
 # [Adam] [SGD]
 Optimizer: Adam

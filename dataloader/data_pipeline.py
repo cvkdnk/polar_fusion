@@ -1,10 +1,9 @@
+import logging
 import numpy as np
 import torch
-from torchsparse import SparseTensor
-from torchsparse.utils.quantize import sparse_quantize
 
 from utils.pf_base_class import PFBaseClass, InterfaceBase
-from utils.data_utils import cart2polar, polar2cart, cart2spherical
+from utils.data_utils import cart2polar, polar2cart, cart2spherical, nb_process_label
 
 
 class DataPipelineInterface(InterfaceBase):
@@ -83,6 +82,7 @@ class DataPipelineBaseClass(PFBaseClass):
         raise NotImplementedError
 
     def __init__(self):
+        self.logger = logging.getLogger(self.__class__.__name__)
         if self.RETURN_TYPE is None:
             raise NotImplementedError
 
@@ -144,21 +144,20 @@ class PointAugmentor(DataPipelineBaseClass):
             "rotate": {'inuse': True, 'rotation_range': 180},
             "jitter": {'inuse': True, 'sigma': 0.01, 'clip': 0.05},
             "scale": {'inuse': True, 'scale_range': 0.1},
-            "flip": {'inuse': True, 'flip_axis': 0}
+            "flip": {'inuse': True}
         }
 
     def __call__(self, data):
         pt_features = data["Point"]
-        aug_features = pt_features.copy()
         if self.rotate["inuse"]:
-            aug_features[:, :3] = self.rotate_point_cloud(pt_features[:, :3], self.rotate["rotation_range"])
+            self.rotate_point_cloud(pt_features[:, :3], self.rotate["rotation_range"])
         if self.jitter["inuse"]:
-            aug_features[:, :3] = self.jitter_point_cloud(pt_features[:, :3], self.jitter["sigma"], self.jitter["clip"])
+            self.jitter_point_cloud(pt_features[:, :3], self.jitter["sigma"], self.jitter["clip"])
         if self.scale["inuse"]:
-            aug_features[:, :3] = self.scale_point_cloud(pt_features[:, :3], self.scale["scale_range"])
+            self.scale_point_cloud(pt_features[:, :3], self.scale["scale_range"])
         if self.flip["inuse"]:
-            aug_features[:, :3] = self.flip_point_cloud(pt_features[:, :3], self.flip["flip_axis"])
-        return {"Point": aug_features}
+            self.flip_point_cloud(pt_features[:, :3])
+        return {"Point": pt_features}
 
     @staticmethod
     def rotate_point_cloud(points, rotation_range=180):
@@ -167,15 +166,13 @@ class PointAugmentor(DataPipelineBaseClass):
             Return:
               rotated_points: Rotated point clouds
         """
-        rotated_points = np.empty(points.shape, dtype=np.float32)
+        # rotated_points = np.empty(points.shape, dtype=np.float32)
         rotation_angle = np.random.uniform() * rotation_range
         cosval = np.cos(rotation_angle)
         sinval = np.sin(rotation_angle)
         rotation_matrix = np.array([[cosval, sinval],
                                     [-sinval, cosval]])
-        rotated_points[:, :2] = np.dot(points[:, :2].reshape((-1, 2)), rotation_matrix)
-        rotated_points[:, 2:] = points[:, 2:]
-        return rotated_points
+        points[:, :2] = np.dot(points[:, :2].reshape((-1, 2)), rotation_matrix)
 
     @staticmethod
     def jitter_point_cloud(points, sigma=0.01, clip=0.05):
@@ -188,11 +185,10 @@ class PointAugmentor(DataPipelineBaseClass):
         N, C = points.shape
         assert (clip > 0)
         jittered_data = np.clip(sigma * np.random.randn(N, C), -1 * clip, clip)
-        jittered_data += points
-        return jittered_data
+        points += jittered_data
 
     @staticmethod
-    def scale_point_cloud(points, scale_low=0.8, scale_high=1.25):
+    def scale_point_cloud(points, scale_low=0.95, scale_high=1.05):
         """ Randomly scale the point clouds. Scale is per point cloud.
             Input:
               Nx3 array, original point clouds
@@ -200,20 +196,21 @@ class PointAugmentor(DataPipelineBaseClass):
               Nx3 array, scaled point clouds
         """
         scaled_data = np.random.uniform(scale_low, scale_high)
-        scaled_data *= points
-        return scaled_data
+        points *= scaled_data
 
     @staticmethod
-    def flip_point_cloud(points, flip_axis=0):
+    def flip_point_cloud(points, flip_x=True, flip_y=True):
         """ Randomly flip the point clouds.
             Input:
               Nx3 array, original point clouds
             Return:
               Nx3 array, flipped point clouds
         """
-        flipped_points = np.copy(points)
-        flipped_points[:, flip_axis] *= -1
-        return flipped_points
+        random_flip = np.random.random(2)
+        if flip_x and random_flip[0] > 0.5:
+            points[:, 0] *= -1
+        if flip_y and random_flip[1] > 0.5:
+            points[:, 1] *= -1
 
 
 @DataPipelineInterface.register
@@ -244,71 +241,72 @@ class InsAugPointAugmentor(DataPipelineBaseClass):  # TODO: Complete this class
 #     RETURN_TYPE = "Point"
 
 
+
+# class VoxelTS(DataPipelineBaseClass):
+#     RETURN_TYPE = "Voxel"
+#
+#     def __init__(self, **config):
+#         """使用TorchSparse库完成体素化"""
+#         super(VoxelTS, self).__init__()
+#         self.voxel_size = config["voxel_size"]
+#         self.fixed_volume_space = config["fixed_volume_space"]  # {inuse, max, min}
+#         self.max_voxel_num = config["max_voxel_num"]
+#
+#     @classmethod
+#     def gen_config_template(cls):
+#         return {
+#             "voxel_size": 0.05,
+#             "fixed_volume_space": {
+#                 "inuse": False,
+#                 "max_volume_space": [50, 50, 1.5],
+#                 "min_volume_space": [-50, -50, -3]
+#             }
+#         }
+#
+#     def __call__(self, data):
+#         pt_features = data["Point"]
+#         coords = pt_features[..., :3]
+#         min_bound = np.min(coords, axis=0) // self.voxel_size
+#         if self.fixed_volume_space["inuse"]:
+#             coords = np.clip(coords,
+#                              self.fixed_volume_space["min_volume_space"],
+#                              self.fixed_volume_space["max_volume_space"])
+#             min_bound = np.array(self.fixed_volume_space["min_volume_space"]) // self.voxel_size
+#         coords_pol = cart2polar(coords)
+#
+#         voxel_coords, p2v_indices, v2p_indices = sparse_quantize(coords,
+#                                                               voxel_size=self.voxel_size,
+#                                                               return_index=True,
+#                                                               return_inverse=True)
+#
+#         vox_centers = voxel_coords * self.voxel_size + self.voxel_size / 2 + min_bound
+#         return_xyz = coords - vox_centers[v2p_indices]
+#         return_xyz = np.concatenate([return_xyz, coords_pol, coords[..., :2]], axis=-1)
+#
+#         if pt_features.shape[1] == 3:
+#             return_fea = return_xyz
+#         else:
+#             return_fea = np.concatenate((return_xyz, pt_features[:, 3:]), axis=-1)
+#         return_fea = torch.tensor(return_fea, dtype=torch.float32)
+#         point_feats_st = SparseTensor(feats=return_fea, coords=voxel_coords)
+#
+#         return {"Voxel": {
+#             "point_feats_st": point_feats_st,
+#             "p2v": p2v_indices,
+#             "v2p": v2p_indices,
+#         }}
+
+
 @DataPipelineInterface.register
-class VoxelTS(DataPipelineBaseClass):
+class Cylindrical(DataPipelineBaseClass):
     RETURN_TYPE = "Voxel"
 
-    def __init__(self, **config):
-        """使用TorchSparse库完成体素化"""
-        super(VoxelTS, self).__init__()
-        self.voxel_size = config["voxel_size"]
-        self.fixed_volume_space = config["fixed_volume_space"]  # {inuse, max, min}
-        self.max_voxel_num = config["max_voxel_num"]
-
-    @classmethod
-    def gen_config_template(cls):
-        return {
-            "voxel_size": 0.05,
-            "fixed_volume_space": {
-                "inuse": False,
-                "max_volume_space": [50, 50, 1.5],
-                "min_volume_space": [-50, -50, -3]
-            }
-        }
-
-    def __call__(self, data):
-        pt_features = data["Point"]
-        coords = pt_features[..., :3]
-        min_bound = np.min(coords, axis=0) // self.voxel_size
-        if self.fixed_volume_space["inuse"]:
-            coords = np.clip(coords,
-                             self.fixed_volume_space["min_volume_space"],
-                             self.fixed_volume_space["max_volume_space"])
-            min_bound = np.array(self.fixed_volume_space["min_volume_space"]) // self.voxel_size
-        coords_pol = cart2polar(coords)
-
-        voxel_coords, p2v_indices, v2p_indices = sparse_quantize(coords,
-                                                              voxel_size=self.voxel_size,
-                                                              return_index=True,
-                                                              return_inverse=True)
-
-        vox_centers = voxel_coords * self.voxel_size + self.voxel_size / 2 + min_bound
-        return_xyz = coords - vox_centers[v2p_indices]
-        return_xyz = np.concatenate([return_xyz, coords_pol, coords[..., :2]], axis=-1)
-
-        if pt_features.shape[1] == 3:
-            return_fea = return_xyz
-        else:
-            return_fea = np.concatenate((return_xyz, pt_features[:, 3:]), axis=-1)
-        return_fea = torch.tensor(return_fea, dtype=torch.float32)
-        point_feats_st = SparseTensor(feats=return_fea, coords=voxel_coords)
-
-        return {"Voxel": {
-            "point_feats_st": point_feats_st,
-            "p2v": p2v_indices,
-            "v2p": v2p_indices,
-        }}
-
-
-@DataPipelineInterface.register
-class CylinderTS(DataPipelineBaseClass):
-    RETURN_TYPE = "Voxel"
-
-    def __init__(self, **config):
+    def __init__(self, ignore_label=0, **config):
         """使用TorchSparse库完成柱坐标分区"""
-        super(CylinderTS, self).__init__()
+        super(Cylindrical, self).__init__()
         self.fixed_volume_space = config["fixed_volume_space"]
-        self.grid_shape = config["grid_shape"]
+        self.grid_shape = np.array(config["grid_shape"])
+        self.ignore_label = ignore_label
 
     @classmethod
     def gen_config_template(cls):
@@ -316,67 +314,59 @@ class CylinderTS(DataPipelineBaseClass):
             "fixed_volume_space": {
                 "inuse": False,
                 "max_volume_space": [50, np.pi, 2],
-                "min_volume_space": [-50, -np.pi, -4]
+                "min_volume_space": [0, -np.pi, -4]
             },
             "grid_shape": [480, 360, 32]
         }
 
     def __call__(self, data):
-        """return: point_features, voxel_start_coords, p2v, v2p"""
+        """ TODO: 重写这个docstring
+        """
         pt_features = data["Point"]
-        xyz = pt_features[..., :3]
-        xyz_pol = cart2polar(xyz)
-        max_bound = np.max(xyz_pol, axis=-2)
-        min_bound = np.min(xyz_pol, axis=-2)
+        labels = data["Label"]
+        coords = pt_features[..., :3]
+        coords_pol = cart2polar(coords)
+        max_bound = np.max(coords_pol, axis=-2)
+        min_bound = np.min(coords_pol, axis=-2)
         if self.fixed_volume_space["inuse"]:
             max_bound = np.asarray(self.fixed_volume_space["max_volume_space"])
             min_bound = np.asarray(self.fixed_volume_space["min_volume_space"])
-            xyz_pol = np.clip(xyz_pol, min_bound, max_bound)
-            xyz = polar2cart(xyz_pol)
+            coords_pol = np.clip(coords_pol, min_bound, max_bound)
+            coords = polar2cart(coords_pol)
         # get grid index
         crop_range = max_bound - min_bound
-        grid_size = crop_range / self.grid_shape
+        grid_size = crop_range / (self.grid_shape - 1)
         if (grid_size == 0).any():
             print("Zero interval!")
-        voxel_coords, p2v, v2p = sparse_quantize(
-            xyz_pol - min_bound, tuple(grid_size), return_index=True, return_inverse=True
-        )
 
-        voxel_coords_pol = voxel_coords * grid_size + min_bound
-        # center data on each voxel for PTnet
-        voxel_centers_pol = voxel_coords_pol + 0.5 * grid_size
+        voxel_coords = ((coords_pol - min_bound) // grid_size).astype(np.int64)
 
-        return_xyz = xyz_pol - voxel_centers_pol[v2p]
-        # maybe not use regression xy
-        # return_xyz = np.concatenate([
-        #         return_xyz,
-        #         xyz[..., :2]-polar2cart(voxel_centers_pol)[..., :2][v2p]
-        #     ], axis=-1)
-        return_xyz = np.concatenate((xyz, xyz_pol[..., :2], return_xyz), axis=-1)
+        return_fea = self.init_feats(pt_features, coords_pol, coords, voxel_coords, grid_size, min_bound)
 
+        vox_labels = np.ones(self.grid_shape, dtype=np.uint8) * self.ignore_label
+        label_voxel_pair = np.concatenate([voxel_coords, labels.reshape(-1, 1)], axis=1)
+        label_voxel_pair = label_voxel_pair[np.lexsort((voxel_coords[:, 0], voxel_coords[:, 1], voxel_coords[:, 2]))]
+        vox_labels = nb_process_label(np.copy(vox_labels), label_voxel_pair)
+
+        return {"Voxel": {
+            "pt_feats": return_fea.astype(np.float32),
+            "pt_vox_coords": voxel_coords,
+            "dense_vox_labels": vox_labels.astype(np.int64)
+        }}
+
+    @staticmethod
+    def init_feats(pt_features, coords_pol, coords, voxel_coords, grid_size, min_bound):
+        voxel_centers_pol = (voxel_coords + 0.5) * grid_size + min_bound
+        return_xyz = coords_pol - voxel_centers_pol
+        return_xyz = np.concatenate((coords, coords_pol[..., :2], return_xyz), axis=-1)
         if pt_features.shape[1] == 3:
             return_fea = return_xyz
         else:
             return_fea = np.concatenate((return_xyz, pt_features[:, 3:]), axis=-1)
+        return return_fea
 
-        point_feats_st = SparseTensor(
-            feats=torch.tensor(return_fea, dtype=torch.float32),
-            coords=voxel_coords[v2p]
-        )
-        voxel_feats_st = SparseTensor(
-            feats=torch.tensor(return_fea[p2v], dtype=torch.float32),
-            coords=voxel_coords
-        )
 
-        return {"Voxel": {
-            "point_feats_st": point_feats_st,
-            "voxel_feats_st": voxel_feats_st,
-            "p2v": p2v,
-            "v2p": v2p,
-        }}
-
-    def draw(self, data):
-        pass
+class Cylinder
 
 
 @DataPipelineInterface.register
@@ -481,41 +471,35 @@ class PolarBevProject(DataPipelineBaseClass):  # TODO: complete this
         return {"Bev": pt_features[..., 1:]}
 
 
-@DataPipelineInterface.register
-class CylinderSP(DataPipelineBaseClass):
-    RETURN_TYPE =
-
-    def __init__(self, **config):
-        super(CylinderSP, self).__init__()
-        self.fixed_volume_space = config["fixed_volume_space"]
-        self.grid_shape = config["grid_shape"]
-
-    @classmethod
-    def gen_config_template(cls):
-        return {
-            "fixed_volume_space": {
-                "inuse": False,
-                "max_volume_space": [50, np.pi, 2],
-                "min_volume_space": [-50, -np.pi, -4]
-            },
-            "grid_shape": [480, 360, 32]
-        }
-
-    def __call__(self, data):
-        pt_features = data["Point"]
-        coords = pt_features[..., :3]
-        coords_pol = cart2polar(coords)
-        max_bound = np.max(coords_pol, axis=0)
-        min_bound = np.min(coords_pol, axis=0)
-        if self.fixed_volume_space["inuse"]:
-            max_bound = np.asarray(self.fixed_volume_space["max_volume_space"])
-            min_bound = np.asarray(self.fixed_volume_space["min_volume_space"])
-            coords_pol = np.clip(coords_pol, min_bound, max_bound)
-            coords = polar2cart(coords_pol)
-        crop_range = max_bound - min_bound
-        grid_size = crop_range / self.grid_shape  # 格子的大小
-        if (grid_size == 0).any():
-            raise "grid_size is zero"
-        voxel_indices, p2v, v2p = sparse_quantize(
-            coords_pol - min_bound, tuple(grid_size), return_index=True, return_inverse=True
-        )
+# class CylinderSpconv(DataPipelineBaseClass):
+#     RETURN_TYPE = "Voxel"
+#
+#     def __init__(self, **config):
+#         super(CylinderSpconv, self).__init__()
+#         self.fixed_volume_space = config["fixed_volume_space"]
+#         self.grid_shape = config["grid_shape"]
+#
+#     @classmethod
+#     def gen_config_template(cls):
+#         return {
+#             "fixed_volume_space": {
+#                 "inuse": False,
+#                 "max_volume_space": [50, np.pi, 2],
+#                 "min_volume_space": [-50, -np.pi, -4]
+#             },
+#             "grid_shape": [480, 360, 32]
+#         }
+#
+#     def __call__(self, data):
+#         pt_features = data["Point"]
+#         coords = pt_features[..., :3]
+#         coords_pol = cart2polar(coords)
+#         max_bound = np.max(coords_pol, axis=-2)
+#         min_bound = np.min(coords_pol, axis=-2)
+#         if self.fixed_volume_space["inuse"]:
+#             max_bound = np.asarray(self.fixed_volume_space["max_volume_space"])
+#             min_bound = np.asarray(self.fixed_volume_space["min_volume_space"])
+#         crop_range = max_bound - min_bound
+#         voxel_size = crop_range / self.grid_shape
+#
+#         voxel_position = np.indices(self.grid_shape) *

@@ -1,0 +1,4 @@
+data_root: /data/semantic-kitti/sequences
+epochs: 60
+device: cuda
+precision: 16

@@ -1,3 +1,4 @@
+import torch
 import yaml
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
@@ -5,24 +6,31 @@ from torch.utils.data import DataLoader
 from dataloader import DatasetInterface, DataPipelineInterface
 from loss import LossInterface
 from utils.optimizer import OptimizerInterface
-from model import ModelInterface
+# from model import ModelInterface
 from utils.data_utils import custom_collate_fn
-from process_config import load_config
+from utils.config_utils import load_config
 
 
 class Builder:
-    def __init__(self, config_path, device='cpu'):
+    def __init__(self, config_path, exp_dir, device='cpu'):
         self.config = load_config(config_path)
+        self.ignore = self.config["dataset"]["ignore"]
+        # 生成JaccardMetric参数
+        self.config["metric"] = {
+            "task": "multiclass",
+            "num_classes": self.config["model"]["num_classes"],
+            "ignore_index": self.ignore,
+            "average": "none"
+        }
+        self.exp_dir = exp_dir
         self.kitti_yaml = yaml.safe_load(open("./config/semantic-kitti.yaml", 'r'))
-        self.train_loader, self.val_loader, self.test_loader = self.get_dataloader()
-        self.model = self.get_model()
-        self.loss, self.loss_weight = self.get_loss(device=device)
-        self.optimizer = self.get_optimizer(self.model.parameters())
+        self.loss = self.get_loss(device=device)
+        self.process_config()
 
     def get_dataloader(self):
         """ 生成dataloader
 
-        :return:
+        :return: (train_loader, val_loader, test_loader)
         """
         dataflow = DatasetInterface.get(self.config["Dataset"], self.config["dataset"])
 
@@ -40,40 +48,47 @@ class Builder:
                     data.update(dp(data))
                 return data
 
-        train_dataset = DataPipeline(dataflow["train"],
-                                     self.config["DataPipeline"]["train"],
-                                     self.config["pipeline"]["train"])
-        val_dataset = DataPipeline(dataflow["val"],
-                                   self.config["DataPipeline"]["val"],
-                                   self.config["pipeline"]["val"])
-        test_dataset = DataPipeline(dataflow["test"],
-                                    self.config["DataPipeline"]["test"],
-                                    self.config["pipeline"]["test"])
+        loader_tuple = ()
+        for mode in ["train", "val", "test"]:
+            dataset = DataPipeline(
+                dataflow[mode],
+                self.config["DataPipeline"][mode],
+                self.config["pipeline"][mode]
+            )
+            loader_tuple += (DataLoader(
+                dataset,
+                collate_fn=custom_collate_fn,
+                **self.config["dataloader"][mode]
+            ), )
+        return loader_tuple
 
-        train_loader = DataLoader(train_dataset, collate_fn=custom_collate_fn,
-                                  **self.config["dataloader"]["train"])
-        val_loader = DataLoader(val_dataset, shuffle=False, collate_fn=custom_collate_fn,
-                                **self.config["dataloader"]["val"])
-        test_loader = DataLoader(test_dataset, shuffle=False, collate_fn=custom_collate_fn,
-                                 **self.config["dataloader"]["test"])
-
-        return train_loader, val_loader, test_loader
-
-    def get_model(self):
-        model = ModelInterface.get(self.config["Model"], self.config["model"])
-        return model
+    # def get_model(self):
+    #     model = ModelInterface.get(self.config["Model"], self.config["model"])
+    #     return model
 
     def get_loss(self, device):
         loss_name = self.config["Loss"]
-        loss_weight = self.config["loss"]["loss_weight"]
-        if isinstance(loss_name, list):
-            loss = []
-            for l in loss_name:
-                loss.append(LossInterface.get(l, self.config["loss"], device))
-            return loss, loss_weight
-        elif isinstance(loss_name, str):
-            return LossInterface.get(loss_name, self.config["loss"], device), None
+        if isinstance(loss_name, str):
+            return LossInterface.get(loss_name, self.config["loss"], device, self.ignore)
+        else:
+            raise RuntimeError("loss_name should be str")
 
     def get_optimizer(self, params):
         optimizer = OptimizerInterface.get(self.config["Optimizer"], self.config["optimizer"], params)
         return optimizer
+
+    def process_config(self):
+        for config_name in ["DataPipeline", "pipeline", "dataloader"]:
+            for mode in ["train", "val", "test"]:
+                tmp = self.config[config_name]["base"].copy()
+                if mode in self.config[config_name]:
+                    if isinstance(self.config[config_name][mode], dict):
+                        tmp.update(self.config[config_name][mode])
+                    else:
+                        tmp += self.config[config_name][mode]
+                    self.config[config_name][mode] = tmp
+                else:
+                    self.config[config_name][mode] = tmp
+        train_config = yaml.safe_load(open("./config/train.yaml", 'r'))
+        self.config["dataset"]["data_root"] = train_config.pop("data_root")
+        self.config["train"] = train_config

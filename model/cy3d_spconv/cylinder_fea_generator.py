@@ -11,15 +11,18 @@ import torch_scatter
 
 
 class cylinder_fea(nn.Module):
-
-    def __init__(self, grid_size, fea_dim=3,
-                 out_pt_fea_dim=64, max_pt_per_encode=64, fea_compre=None):
+    def __init__(self,
+                 in_fea_dim=3,
+                 out_pt_fea_dim=64,
+                 fea_compre=False,
+                 return_inverse=False
+                 ):
         super(cylinder_fea, self).__init__()
 
         self.PPmodel = nn.Sequential(
-            nn.BatchNorm1d(fea_dim),
+            nn.BatchNorm1d(in_fea_dim),
 
-            nn.Linear(fea_dim, 64),
+            nn.Linear(in_fea_dim, 64),
             nn.BatchNorm1d(64),
             nn.ReLU(),
 
@@ -33,10 +36,8 @@ class cylinder_fea(nn.Module):
 
             nn.Linear(256, out_pt_fea_dim)
         )
-
-        self.max_pt = max_pt_per_encode
+        self.return_inverse = return_inverse
         self.fea_compre = fea_compre
-        self.grid_size = grid_size
         kernel_size = 3
         self.local_pool_op = torch.nn.MaxPool2d(kernel_size, stride=1,
                                                 padding=(kernel_size - 1) // 2,
@@ -52,25 +53,23 @@ class cylinder_fea(nn.Module):
         else:
             self.pt_fea_dim = self.pool_dim
 
-    def forward(self, pt_fea, xy_ind):
-        cur_dev = pt_fea[0].get_device()
+    def forward(self, point_feats, pt_vox_coords):
+        cur_dev = point_feats[0].get_device()
+        cat_pt_vox_coords = []
+        for batch_idx in range(len(point_feats)):
+            cat_pt_vox_coords.append(F.pad(pt_vox_coords[batch_idx], (1, 0), 'constant', value=batch_idx))
 
-        # concate everything
-        cat_pt_ind = []
-        for i_batch in range(len(xy_ind)):
-            cat_pt_ind.append(F.pad(xy_ind[i_batch], (1, 0), 'constant', value=i_batch))
-
-        cat_pt_fea = torch.cat(pt_fea, dim=0)
-        cat_pt_ind = torch.cat(cat_pt_ind, dim=0)
-        pt_num = cat_pt_ind.shape[0]
+        cat_pt_fea = torch.cat(point_feats, dim=0)
+        cat_pt_vox_coords = torch.cat(cat_pt_vox_coords, dim=0)
+        pt_num = cat_pt_vox_coords.shape[0]
 
         # shuffle the data
-        shuffled_ind = torch.randperm(pt_num, device=cur_dev)
-        cat_pt_fea = cat_pt_fea[shuffled_ind, :]
-        cat_pt_ind = cat_pt_ind[shuffled_ind, :]
+        # shuffled_ind = torch.randperm(pt_num, device=cur_dev)
+        # cat_pt_fea = cat_pt_fea[shuffled_ind, :]
+        # cat_pt_vox_coords = cat_pt_vox_coords[shuffled_ind, :]
 
         # unique xy grid index
-        unq, unq_inv, unq_cnt = torch.unique(cat_pt_ind, return_inverse=True, return_counts=True, dim=0)
+        unq, unq_inv, unq_cnt = torch.unique(cat_pt_vox_coords, return_inverse=True, return_counts=True, dim=0)
         unq = unq.type(torch.int64)
 
         # process feature
@@ -82,4 +81,6 @@ class cylinder_fea(nn.Module):
         else:
             processed_pooled_data = pooled_data
 
+        if self.return_inverse:
+            return unq, processed_pooled_data, unq_inv
         return unq, processed_pooled_data
