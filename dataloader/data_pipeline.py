@@ -302,7 +302,6 @@ class Cylindrical(DataPipelineBaseClass):
     RETURN_TYPE = "Voxel"
 
     def __init__(self, ignore_label=0, **config):
-        """使用TorchSparse库完成柱坐标分区"""
         super(Cylindrical, self).__init__()
         self.fixed_volume_space = config["fixed_volume_space"]
         self.grid_shape = np.array(config["grid_shape"])
@@ -320,8 +319,6 @@ class Cylindrical(DataPipelineBaseClass):
         }
 
     def __call__(self, data):
-        """ TODO: 重写这个docstring
-        """
         pt_features = data["Point"]
         labels = data["Label"]
         coords = pt_features[..., :3]
@@ -366,7 +363,17 @@ class Cylindrical(DataPipelineBaseClass):
         return return_fea
 
 
-class Cylinder
+class CylinderGeneral(Cylindrical):
+    def __init__(self, ignore_label=0, **config):
+        super(Cylindrical, self).__init__()
+        self.fixed_volume_space = config["fixed_volume_space"]
+        self.grid_shape = np.array(config["grid_shape"])
+        self.ignore_label = ignore_label
+
+    @staticmethod
+    def init_feats(pt_features, coords_pol, coords, voxel_coords, grid_size, min_bound):
+        raise NotImplementedError
+
 
 
 @DataPipelineInterface.register

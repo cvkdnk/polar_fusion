@@ -116,17 +116,20 @@ class ModuleBaseClass(pl.LightningModule, PFBaseClass):
             self.log("val/acc", results["acc"], batch_size=self.val_bsz, on_epoch=True)
 
     def _plt_sample(self, seq_frame, points, labels, preds_pt, dense_labels=None, dense_preds=None):
-        """input torch.Tensor"""
-        save_path = self.exp_dir + "/val_plt/" + seq_frame
-        # np.save(save_path + f"_{self.current_epoch}_preds.npy", preds_pt)
-        # 预测错误的点云可视化
-        SemKittiUtils.draw_acc(points, labels, preds_pt, save_path + f"_{self.current_epoch}_err.xyz")
-        # 原始标签点云和预测点云可视化
+        save_path = self.exp_dir + "/val_plt/"
         if not self.gt_record:
             SemKittiUtils.draw_rgb_pcd(points, labels,
-                                       self.builder.kitti_yaml, save_path + "_gt.xyz")
+                                       self.builder.kitti_yaml, save_path + "/" + seq_frame + "_gt.xyz")
+        """input torch.Tensor"""
+        save_path += str(self.current_epoch).zfill(2) + "/"
+        os.makedirs(save_path, exist_ok=True)
+        save_path += seq_frame
+        # 预测错误的点云可视化
+        SemKittiUtils.draw_acc(points, labels, preds_pt, save_path + f"_err.xyz")
+        # 原始标签点云和预测点云可视化
+
         SemKittiUtils.draw_rgb_pcd(points, preds_pt,
-                                   self.builder.kitti_yaml, save_path + f"_{self.current_epoch}_pred.xyz")
+                                   self.builder.kitti_yaml, save_path + f"_pred.xyz")
         # 体素点云可视化
         if dense_labels is not None:
             assert dense_preds is not None
@@ -134,11 +137,12 @@ class ModuleBaseClass(pl.LightningModule, PFBaseClass):
             bev_labels = np.take_along_axis(dense_labels, bev_idx[..., None], axis=-1).squeeze(-1)
             bev_preds = np.take_along_axis(dense_preds, bev_idx[..., None], axis=-1).squeeze(-1)
             img_labels = SemKittiUtils.draw_rgb_bev(bev_labels, self.builder.kitti_yaml,
-                                                    save_path + f"_{self.current_epoch}_bev_gt.png")
+                                                    save_path + f"_bev_gt.png")
             img_preds = SemKittiUtils.draw_rgb_bev(bev_preds, self.builder.kitti_yaml,
-                                                   save_path + f"_{self.current_epoch}_bev_pred.png")
-            self.logger.experiment.log({"val_bev_gt_sample": wandb.Image(img_labels)}) if not self.gt_record else None
-            self.logger.experiment.log({"val_bev_pred_sample": wandb.Image(img_preds)})
+                                                   save_path + f"_bev_pred.png")
+            if not self.builder.debug:
+                self.logger.experiment.log({"val_bev_gt_sample": wandb.Image(img_labels)}) if not self.gt_record else None
+                self.logger.experiment.log({"val_bev_pred_sample": wandb.Image(img_preds)})
         self.gt_record = True
 
     def _eval(self, logits_dict, batch_data, train=True):
@@ -158,4 +162,5 @@ class ModuleBaseClass(pl.LightningModule, PFBaseClass):
         self.best_miou = miou
         self.best_iou_per_class = iou_per_class
         table = wandb.Table(data=[iou_per_class], columns=self.word_list)
-        self.logger.experiment.log({"iou_per_class": table})
+        if not self.builder.debug:
+            self.logger.experiment.log({"iou_per_class": table})

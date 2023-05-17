@@ -170,6 +170,7 @@ class ResNet_34(nn.Module):
         out = torch.cat(res, dim=1)
         out = self.conv_1(out)
         out = self.conv_2(out)
+        out_feats = out.copy()
         out = self.semantic_output(out)
         out = F.softmax(out, dim=1)
 
@@ -195,7 +196,7 @@ class ResNet_34(nn.Module):
         if self.aux:
             return [out, res_2, res_3, res_4]
         else:
-            return out
+            return out, out_feats
 
 
 

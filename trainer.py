@@ -44,6 +44,7 @@ class Trainer:
                                               save_last=True, save_top_k=3, mode="max")
         self.profiler = PyTorchProfiler(dirpath=self.exp_dir, filename="profile", export_to_chrome=True)
         self.builder = Builder(self.config_path, self.exp_dir, self.train_config["device"])
+        self.builder.debug = args.debug
         self.trainer = pl.Trainer(
             accelerator=self.train_config["device"],
             devices=1,
@@ -80,7 +81,8 @@ class Trainer:
         config = self.builder.config.copy()
         config["exp_dir"] = self.exp_dir
         config.update(self.train_config)
-        wandb_logger.experiment.config.update(config)
+        if not args.debug:
+            wandb_logger.experiment.config.update(config)
 
 
 if __name__ == "__main__":

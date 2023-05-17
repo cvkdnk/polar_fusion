@@ -1,9 +1,9 @@
 # Base config to generate config dir
-# Last updated: 2023-03-23 22:48:56.673983
+# Last updated: 2023-04-27 14:51:04.530019
 
 # The param is where to store the generated config files, 
 # base path is /home/cls2021/cvkdnk/workspace/PolarFusion/experiments
-Dirname: fix_iou 
+Dirname: SegMapGS
 
 # [SemanticKITTI] [NuScenes]
 Dataset: SemanticKITTI
@@ -18,11 +18,11 @@ DataPipeline:
     train:
     - PointAugmentor  # cover the base pipeline
 
-# [Cylinder3DSPConv]
-Model: Cylinder3DSPConv
+# [Cylinder3DSPConv] [Cy3D_SegMap_GS]
+Model: Cy3D_SegMap_GS
 
-# [VoxelWCE] [VoxelLovasz] [VoxelWCELovasz]
-Loss: VoxelWCELovasz
+# [VoxelWCE] [VoxelLovasz] [VoxelWCELovasz] [MultiLogitsLoss]
+Loss: MultiLogitsLoss
 
 # [Adam] [SGD]
 Optimizer: Adam

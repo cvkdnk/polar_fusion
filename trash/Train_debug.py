@@ -85,7 +85,7 @@ class AutoModel(pl.LightningModule):
 
 
 if __name__ == "__main__":
-    work_dir = "./experiments/cylinder3d"
+    work_dir = "../experiments/cylinder3d"
     builder = Builder(work_dir, "cuda:0")
     experiment_dir = os.path.join(work_dir, datetime.now().strftime("%m-%d_%H-%M"))
     os.makedirs(experiment_dir, exist_ok=True)

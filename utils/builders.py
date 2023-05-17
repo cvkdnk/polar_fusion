@@ -13,6 +13,7 @@ from utils.config_utils import load_config
 
 class Builder:
     def __init__(self, config_path, exp_dir, device='cpu'):
+        self.debug = None
         self.config = load_config(config_path)
         self.ignore = self.config["dataset"]["ignore"]
         # 生成JaccardMetric参数

@@ -3,6 +3,7 @@ import yaml
 
 from utils.data_utils import SemKittiUtils, label_mapping
 from utils.pf_base_class import PFBaseClass, InterfaceBase
+from nuscenes.nuscenes import NuScenes
 
 
 class DatasetInterface(InterfaceBase):
@@ -68,6 +69,10 @@ class BaseDataset(PFBaseClass):
 
 @DatasetInterface.register
 class SemanticKITTI(BaseDataset):
+    """SemanticKITTI dataset, 继承与BaseDataset，不过官方给了content不需要再计算均值方差了
+
+        包括四个模式：train, val, test, train+val，
+    """
     @classmethod
     def gen_config_template(cls):
         cfg_struct = {
@@ -120,8 +125,11 @@ class SemanticKITTI(BaseDataset):
 
 @DatasetInterface.register
 class NuScenes(BaseDataset): # TODO: complete nuscenes dataset
-    def __init__(self):
+    def __init__(self, mode='train', **config):
         super().__init__()
+        self.mode = mode
+        self.data_root = config["data_root"]
+        self.nusc = NuScenes(version='v1.0-trainval-test', dataroot=self.data_root, verbose=True)
 
     def __getitem__(self, item):
         pass

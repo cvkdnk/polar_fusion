@@ -2,6 +2,8 @@ import pytorch_lightning as pl
 import torch
 import time
 
+import spconv.pytorch as spconv
+
 from utils.pf_base_class import InterfaceBase
 from utils.builders import Builder
 from utils.data_utils import batch_upsampling
@@ -20,90 +22,6 @@ class ModelInterface(InterfaceBase):
             return cls.REGISTER[name](builder)
         class_type = cls.__name__.replace("Interface", "")
         raise TypeError(f"{class_type} in base.yaml should be str")
-
-
-# class ModuleBaseClass(nn.Module, PFBaseClass):
-#     NEED_TYPE = None
-
-
-
-# class Cylinder3DTS(ModuleBaseClass):
-#     NEED_TYPE = "Point,Voxel"
-#
-#     @classmethod
-#     def gen_config_template(cls):
-#         config = {
-#             "point_wise_refinement": True,
-#             "in_fea_dim": 9,
-#             "mlp_channels": [64, 128, 256, 64],
-#             "out_fea_dim": 256,
-#             "fea_compre": None,
-#             "output_shape": [480, 360, 32],
-#             "num_input_features": 64,
-#             "num_classes": 20,
-#             "init_size": 32,
-#         }
-#         return config
-#
-#     def __init__(self, builder):
-#         super().__init__(builder)
-#         self.name = "Cylinder3D"
-#         model_config = builder.config["model"]
-#         self.point_wise_refinement = model_config["point_wise_refinement"]
-#         from model.cy3d import CylinderPointMLP, PointWiseRefinement, Asymm_3d_spconv
-#         self.cylinder_3d_generator = CylinderPointMLP(
-#             in_fea_dim=model_config["in_fea_dim"],
-#             mlp_channels=model_config["mlp_channels"],
-#             out_pt_fea_dim=model_config["out_fea_dim"],
-#             fea_compre=model_config["fea_compre"]
-#         )
-#         self.cylinder_3d_spconv_seg = Asymm_3d_spconv(
-#             num_input_feats=model_config["num_input_features"],
-#             init_size=model_config["init_size"],
-#             num_classes=model_config["num_classes"]
-#         )
-#         self.cylinder_3d_generate_logits = PointWiseRefinement(
-#             init_size=model_config["init_size"],
-#             mlp_channels=model_config["mlp_channels"],
-#             num_classes=model_config["num_classes"]
-#         )
-#
-#     def forward(self, batch, *args):
-#         data = batch["Voxel"]
-#         point_feats_st = data["point_feats_st"]
-#         voxel_feats_st = data["voxel_feats_st"]
-#         upsample_inds = data["upsampling_index"]
-#
-#         # 生成点特征
-#         point_feats_st, voxel_feats_st, skip_pt_feats = self.cylinder_3d_generator(
-#             point_feats_st, voxel_feats_st, upsample_inds)
-#
-#         # 通过稀疏卷积对体素特征处理并给出预测结果
-#         voxel_logits_st, voxel_feats_st = self.cylinder_3d_spconv_seg(voxel_feats_st)
-#
-#         # 处理体素预测结果
-#         out_point_feats = batch_upsampling(voxel_feats_st.F, upsample_inds)
-#         if self.point_wise_refinement:
-#             logits = self.cylinder_3d_generate_logits(out_point_feats, skip_pt_feats)
-#         else:
-#             logits = batch_upsampling(voxel_logits_st.F, upsample_inds)
-#
-#         return logits, voxel_logits_st
-
-
-class CENet(ModuleBaseClass):
-
-    @classmethod
-    def gen_config_template(cls):
-        return {
-            "num_classes": 20,
-            "aux_loss": False
-        }
-
-    def __init__(self, **config):
-        super(CENet, self).__init__()
-        from model.cenet import HarDNet
-        self.model = HarDNet(config["num_classes"], config["aux_loss"])
 
 
 @ModelInterface.register
@@ -157,16 +75,46 @@ class Cylinder3DSPConv(ModuleBaseClass):
 
 
 @ModelInterface.register
-class PolarFusionBaseline(Cylinder3DSPConv):
-    def __init__(self, builder):
-        super(PolarFusionBaseline, self).__init__(builder)
-        from model.cy3d_spconv import cylinder_fea, Asymm_3d_spconv
+class Cy3D_SegMap_GS(ModuleBaseClass):
+    NEED_TYPE = "Point,Voxel"
+
+    @classmethod
+    def gen_config_template(cls):
+        config = {
+            "in_fea_dim": 9,
+            "mlp_channels": [64, 128, 256, 64],
+            "out_fea_dim": 256,
+            "fea_compre": 64,
+            "output_shape": [480, 360, 32],
+            "num_input_features": 64,
+            "num_classes": 20,
+            "init_size": 32,
+            "compress_ratio": [20, 20, 4],  # 从体素空间使用GS降采样的倍率，例如[20, 20, 4]表示在x,y,z方向上分别降采样20倍，20倍，4倍
+        }
+        return config
+
+    def __init__(self, builder: Builder):
+        super(Cy3D_SegMap_GS, self).__init__(builder)
+        from torchmetrics import JaccardIndex
+        self.jaccard_raw = JaccardIndex(**builder.config["metric"])
         config = builder.config["model"]
+        from model.cy3d_spconv import cylinder_fea
+        from model.segmap import SegmentorMap, Asymm_3d
         self.pt_fea_gen = cylinder_fea(  # 生成点特征的模型
             config["in_fea_dim"],
             config["out_fea_dim"],
-            config["fea_compre"],
-            return_inverse=True
+            config["fea_compre"]
+        )
+        self.cy3d_spconv_seg = Asymm_3d(  # 通过稀疏卷积对体素特征处理并给出预测结果
+            config["output_shape"],
+            config["num_input_features"],
+            config["num_classes"],
+            config["init_size"]
+        )
+        self.seg_map = SegmentorMap(
+            config["compress_ratio"],
+            config["init_size"],
+            config["num_classes"]
         )
 
     def forward(self, batch, *args):
@@ -174,9 +122,105 @@ class PolarFusionBaseline(Cylinder3DSPConv):
         pt_vox_coords = batch["Voxel"]["pt_vox_coords"]
         coords, features_3d = self.pt_fea_gen(point_feats, pt_vox_coords)
         batch_size = len(batch["PointsNum"])
-        logits = self.cy3d_spconv_seg(features_3d, coords, batch_size)
-        y = logits.dense()
-        return {"sparse": logits, "dense": y}
+        logits, feats = self.cy3d_spconv_seg(features_3d, coords, batch_size)
+        raw_logits = spconv.SparseConvTensor(
+            logits.features.clone(), logits.indices, logits.spatial_shape, batch_size
+        )
+        logits, feats = self.seg_map(logits, feats, batch_size)
+        return {"raw_dense": raw_logits.dense(), "dense": logits.dense()}
+
+    def _eval(self, logits_dict, batch_data, train=True):
+        labels = batch_data["Voxel"]["dense_vox_labels"]
+        preds = torch.argmax(logits_dict["dense"], dim=1)
+        result = self._eval_func(preds, labels, train)
+        if not train:
+            raw_preds = torch.argmax(logits_dict["raw_dense"], dim=1)
+            if len(preds.shape) != 1:
+                raw_preds, labels = preds.view(-1), labels.view(-1)
+            self.jaccard_raw(raw_preds, labels)
+        return result
+
+    def validation_step(self, batch_data, batch_idx):
+        logits_dict = self(batch_data)
+        loss = self.loss(logits_dict, batch_data)
+        results = self._eval(logits_dict, batch_data, train=False)
+        self._log_results_step(loss, results, train=False)
+        if batch_idx == 0:
+            vox_pred = torch.argmax(logits_dict["dense"][0], dim=0).cpu().numpy()
+            x, y, z = batch_data["Voxel"]["pt_vox_coords"][0].cpu().numpy().T
+            pt_pred = vox_pred[x, y, z]
+            self._plt_sample(seq_frame=batch_data["SeqFrame"][0],
+                                points=batch_data["Point"][0][..., :3].cpu().numpy(),
+                                labels=batch_data["Label"][0].cpu().numpy(),
+                                preds_pt=pt_pred,
+                                dense_labels=batch_data["Voxel"]["dense_vox_labels"][0].cpu().numpy(),
+                                dense_preds=vox_pred)
+            vox_pred = torch.argmax(logits_dict["raw_dense"][0], dim=0).cpu().numpy()
+            pt_pred = vox_pred[x, y, z]
+            self._plt_sample(seq_frame="raw"+batch_data["SeqFrame"][0],
+                                points=batch_data["Point"][0][..., :3].cpu().numpy(),
+                                labels=batch_data["Label"][0].cpu().numpy(),
+                                preds_pt=pt_pred,
+                                dense_labels=batch_data["Voxel"]["dense_vox_labels"][0].cpu().numpy(),
+                                dense_preds=vox_pred)
+
+    def on_validation_epoch_end(self):
+        # compute iou
+        iou_per_class = self.jaccard.compute()
+        raw_iou_per_class = self.jaccard_raw.compute()
+        iou_mask = torch.ones_like(iou_per_class, dtype=torch.bool)
+        iou_mask[self.builder.config["metric"]["ignore_index"]] = False
+        # log iou and miou
+        print("\n|==============IoU per class==============|")
+        print("| Name         |    IoU |   Best |    Raw |")
+        print("|-----------------------------------------|")
+        for i, iou in enumerate(iou_per_class):
+            if not iou_mask[i]:
+                continue
+            word = self.word_list[i]
+            self.log(f"val_iou/{word}", iou, batch_size=self.val_bsz, on_epoch=True)
+            print(f"| {word.ljust(13)}" + "| {:5.2f}% | {:5.2f}% | {:5.2f}% |".format(
+                iou * 100, self.best_iou_per_class[i] * 100, raw_iou_per_class[i] * 100
+            ))
+        miou = torch.masked_select(iou_per_class, iou_mask).mean()
+        raw_miou = torch.masked_select(raw_iou_per_class, iou_mask).mean()
+        self.log("val/mIoU", miou, on_epoch=True, logger=True, batch_size=self.val_bsz)
+        self.log("val/raw_mIoU", raw_miou, on_epoch=True, logger=True, batch_size=self.val_bsz)
+        print("|-----------------------------------------|")
+        print("| Current mIoU | {:5.2f}% | {:5.2f}% | {:5.2f}% |".format(
+            miou * 100, self.best_miou * 100, raw_miou * 100
+        ))
+        print("|=========================================|")
+        # update best iou
+        if miou > self.best_miou:
+            self._update_miou(miou, iou_per_class)
+        # reset jaccard index
+        self.jaccard.reset()
+        self.jaccard_raw.reset()
+
+
+# class MSegCeRes(ModuleBaseClass):
+#     NEED_TYPE = "Point,Range"
+#
+#     @classmethod
+#     def gen_config_template(cls):
+#         config = {
+#             "num_classes": 20,
+#             "cenet_ckpt": "/home/cls2021/cvkdnk/workspace/PolarFusion/save/CENet_64x512_67_6",
+#         }
+#         return config
+#
+#     def __init__(self, builder):
+#         super().__init__(builder)
+#         config = builder.config["model"]
+#         from model.cenet.ResNet import ResNet_34
+#         self.resnet = ResNet_34(config["num_classes"], aux=False)
+#         cenet_ckpt = torch.load(config["cenet_ckpt"])
+#         self.resnet.load_state_dict(cenet_ckpt["state_dict"])
+#
+#     def forward(self, batch, *args):
+
+
 
 
 if __name__ == "__main__":

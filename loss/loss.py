@@ -111,3 +111,12 @@ class VoxelWCELovasz(VoxelWCE):
         loss = self.loss(pred, target) + lovasz_softmax(
             nn.functional.softmax(pred, dim=1), target, ignore=self.config["ignore"])
         return loss
+
+
+@LossInterface.register
+class MultiLogitsLoss(VoxelWCELovasz):
+    def __call__(self, logits_dict, batch_data):
+        loss = 0
+        for logits in logits_dict:
+            loss += super().__call__({"dense": logits_dict[logits]}, batch_data)
+        return loss
