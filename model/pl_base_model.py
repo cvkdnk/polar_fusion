@@ -10,6 +10,7 @@ from utils.builders import Builder
 from utils.pf_base_class import PFBaseClass
 from utils.evaluate import mIoU
 from utils.data_utils import label2word, SemKittiUtils
+from utils.train_utils import AverageMeter
 
 
 class ModuleBaseClass(pl.LightningModule, PFBaseClass):
@@ -34,6 +35,10 @@ class ModuleBaseClass(pl.LightningModule, PFBaseClass):
         self.word_list = [str(
             label2word(i, self.builder.kitti_yaml["labels"], self.builder.kitti_yaml["learning_map_inv"])
         ) for i in range(20)]  # SemanticKITTI Only
+        self.forward_meter = AverageMeter()
+        self.backward_meter = AverageMeter()
+        self.eval_meter = AverageMeter()
+        self.time_flag = True
 
     def forward(self, inputs, *args) -> Any:
         raise NotImplementedError
@@ -49,13 +54,19 @@ class ModuleBaseClass(pl.LightningModule, PFBaseClass):
         self._log_results_step(
             loss, results, train=True
         )
-        self.log("time/forward", end1_time - begin_time, logger=True, on_epoch=True, batch_size=self.train_bsz)
-        self.log("time/loss", end2_time - end1_time, logger=True, on_epoch=True, batch_size=self.train_bsz)
-        self.log("time/eval", end3_time - end2_time, logger=True, on_epoch=True, batch_size=self.train_bsz)
+        if self.time_flag:
+            self.forward_meter.update(end1_time - begin_time)
+            self.backward_meter.update(end2_time - end1_time)
+            self.eval_meter.update(end3_time - end2_time)
+            self.log("time/forward", self.forward_meter.avg, prog_bar=True, batch_size=self.train_bsz)
+            self.log("time/backward", self.backward_meter.avg, batch_size=self.train_bsz)
+            self.log("time/eval", self.eval_meter.avg, batch_size=self.train_bsz)
         return loss
 
     def on_training_epoch_end(self):
-        self.log("time/epoch_end", time.time(), logger=True, on_epoch=True, batch_size=self.train_bsz)
+        if self.time_flag:
+            self._log_time()
+            self.time_flag = False
 
     def validation_step(self, batch_data, batch_idx):
         logits_dict = self(batch_data)
@@ -109,11 +120,13 @@ class ModuleBaseClass(pl.LightningModule, PFBaseClass):
         if train:
             self.log("train/loss", loss,
                      on_step=True, on_epoch=True, logger=True, batch_size=self.train_bsz)
-            self.log("train/acc", results["acc"],
-                     on_step=True, prog_bar=True, logger=True, batch_size=self.train_bsz)
+            for k in results.keys():
+                self.log(f"train/{k}", results[k],
+                         on_step=True, prog_bar=True, logger=True, batch_size=self.train_bsz)
         else:
             self.log("val/loss", loss, batch_size=self.val_bsz, on_epoch=True)
-            self.log("val/acc", results["acc"], batch_size=self.val_bsz, on_epoch=True)
+            for k in results.keys():
+                self.log(f"val/{k}", results[k], batch_size=self.val_bsz, prog_bar=True)
 
     def _plt_sample(self, seq_frame, points, labels, preds_pt, dense_labels=None, dense_preds=None):
         save_path = self.exp_dir + "/val_plt/"
@@ -155,12 +168,22 @@ class ModuleBaseClass(pl.LightningModule, PFBaseClass):
             preds, labels = preds.view(-1), labels.view(-1)
         if not train:
             self.jaccard(preds, labels)
-        acc = torch.sum(preds == labels) / (labels.shape[0] + 1e-6)
+        valid = (labels != self.builder.ignore)
+        acc = torch.sum(preds[valid] == labels[valid]) / (labels[valid].shape[0] + 1e-6)
         return {"acc": acc}
 
     def _update_miou(self, miou, iou_per_class):
         self.best_miou = miou
         self.best_iou_per_class = iou_per_class
-        table = wandb.Table(data=[iou_per_class], columns=self.word_list)
-        if not self.builder.debug:
-            self.logger.experiment.log({"iou_per_class": table})
+        # if not self.builder.debug:
+        #     table = wandb.Table(data=[iou_per_class], columns=self.word_list)
+        #     self.logger.experiment.log({"iou_per_class": table})
+
+    def _log_time(self):
+        print("\n|===========Spend Time===========|")
+        print("| Forward | Backward | Evaluate  |")
+        print(f"| {self.forward_meter.avg:.4f}s | {self.backward_meter.avg:.4f}s  | {self.eval_meter.avg:.4f}s   |")
+        print("|==================================|")
+        self.forward_meter.reset()
+        self.backward_meter.reset()
+        self.eval_meter.reset()

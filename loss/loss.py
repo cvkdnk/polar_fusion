@@ -120,3 +120,16 @@ class MultiLogitsLoss(VoxelWCELovasz):
         for logits in logits_dict:
             loss += super().__call__({"dense": logits_dict[logits]}, batch_data)
         return loss
+
+
+@LossInterface.register
+class PointWCELovasz(BaseLoss):
+    def __call__(self, logits_dict, batch_data):
+        if "point" in logits_dict:
+            pred = logits_dict["point"]
+            target = batch_data["Label"]
+        else:
+            raise RuntimeError("No point prediction in logits_dict")
+        return lovasz_softmax(
+            nn.functional.softmax(pred), target, ignore=self.config["ignore"]
+        )

@@ -6,6 +6,7 @@ import spconv.pytorch as spconv
 
 from utils.pf_base_class import InterfaceBase
 from utils.builders import Builder
+from utils.train_utils import AverageMeter
 from utils.data_utils import batch_upsampling
 from model.pl_base_model import ModuleBaseClass
 
@@ -89,14 +90,14 @@ class Cy3D_SegMap_GS(ModuleBaseClass):
             "num_input_features": 64,
             "num_classes": 20,
             "init_size": 32,
-            "compress_ratio": [20, 20, 4],  # 从体素空间使用GS降采样的倍率，例如[20, 20, 4]表示在x,y,z方向上分别降采样20倍，20倍，4倍
+            "compress_ratio": [60, 45, 32],  # 从体素空间使用GS降采样的倍率，例如[20, 20, 4]表示在x,y,z方向上分别降采样20倍，20倍，4倍
         }
         return config
 
     def __init__(self, builder: Builder):
         super(Cy3D_SegMap_GS, self).__init__(builder)
         from torchmetrics import JaccardIndex
-        self.jaccard_raw = JaccardIndex(**builder.config["metric"])
+        # self.jaccard_raw = JaccardIndex(**builder.config["metric"])
         config = builder.config["model"]
         from model.cy3d_spconv import cylinder_fea
         from model.segmap import SegmentorMap, Asymm_3d
@@ -122,22 +123,24 @@ class Cy3D_SegMap_GS(ModuleBaseClass):
         pt_vox_coords = batch["Voxel"]["pt_vox_coords"]
         coords, features_3d = self.pt_fea_gen(point_feats, pt_vox_coords)
         batch_size = len(batch["PointsNum"])
-        logits, feats = self.cy3d_spconv_seg(features_3d, coords, batch_size)
-        raw_logits = spconv.SparseConvTensor(
-            logits.features.clone(), logits.indices, logits.spatial_shape, batch_size
-        )
-        logits, feats = self.seg_map(logits, feats, batch_size)
-        return {"raw_dense": raw_logits.dense(), "dense": logits.dense()}
+        _, feats = self.cy3d_spconv_seg(features_3d, coords, batch_size)
+        # raw_logits = spconv.SparseConvTensor(
+        #     logits.features.clone(), logits.indices, logits.spatial_shape, batch_size
+        # )
+        logits, feats = self.seg_map(feats, batch_size)
+        # return {"raw_dense": raw_logits.dense(), "dense": logits.dense()}
+        return {"dense": logits.dense()}
 
     def _eval(self, logits_dict, batch_data, train=True):
         labels = batch_data["Voxel"]["dense_vox_labels"]
+        # print("logits_dict[dense].shape", logits_dict["dense"].shape)  # (B, 20, 480, 360, 32)
         preds = torch.argmax(logits_dict["dense"], dim=1)
         result = self._eval_func(preds, labels, train)
-        if not train:
-            raw_preds = torch.argmax(logits_dict["raw_dense"], dim=1)
-            if len(preds.shape) != 1:
-                raw_preds, labels = preds.view(-1), labels.view(-1)
-            self.jaccard_raw(raw_preds, labels)
+        # if not train:
+        #     raw_preds = torch.argmax(logits_dict["raw_dense"], dim=1)
+        #     if len(preds.shape) != 1:
+        #         raw_preds, labels = preds.view(-1), labels.view(-1)
+        #     self.jaccard_raw(raw_preds, labels)
         return result
 
     def validation_step(self, batch_data, batch_idx):
@@ -155,48 +158,48 @@ class Cy3D_SegMap_GS(ModuleBaseClass):
                                 preds_pt=pt_pred,
                                 dense_labels=batch_data["Voxel"]["dense_vox_labels"][0].cpu().numpy(),
                                 dense_preds=vox_pred)
-            vox_pred = torch.argmax(logits_dict["raw_dense"][0], dim=0).cpu().numpy()
-            pt_pred = vox_pred[x, y, z]
-            self._plt_sample(seq_frame="raw"+batch_data["SeqFrame"][0],
-                                points=batch_data["Point"][0][..., :3].cpu().numpy(),
-                                labels=batch_data["Label"][0].cpu().numpy(),
-                                preds_pt=pt_pred,
-                                dense_labels=batch_data["Voxel"]["dense_vox_labels"][0].cpu().numpy(),
-                                dense_preds=vox_pred)
+            # vox_pred = torch.argmax(logits_dict["raw_dense"][0], dim=0).cpu().numpy()
+            # pt_pred = vox_pred[x, y, z]
+            # self._plt_sample(seq_frame="raw"+batch_data["SeqFrame"][0],
+            #                     points=batch_data["Point"][0][..., :3].cpu().numpy(),
+            #                     labels=batch_data["Label"][0].cpu().numpy(),
+            #                     preds_pt=pt_pred,
+            #                     dense_labels=batch_data["Voxel"]["dense_vox_labels"][0].cpu().numpy(),
+            #                     dense_preds=vox_pred)
 
-    def on_validation_epoch_end(self):
-        # compute iou
-        iou_per_class = self.jaccard.compute()
-        raw_iou_per_class = self.jaccard_raw.compute()
-        iou_mask = torch.ones_like(iou_per_class, dtype=torch.bool)
-        iou_mask[self.builder.config["metric"]["ignore_index"]] = False
-        # log iou and miou
-        print("\n|==============IoU per class==============|")
-        print("| Name         |    IoU |   Best |    Raw |")
-        print("|-----------------------------------------|")
-        for i, iou in enumerate(iou_per_class):
-            if not iou_mask[i]:
-                continue
-            word = self.word_list[i]
-            self.log(f"val_iou/{word}", iou, batch_size=self.val_bsz, on_epoch=True)
-            print(f"| {word.ljust(13)}" + "| {:5.2f}% | {:5.2f}% | {:5.2f}% |".format(
-                iou * 100, self.best_iou_per_class[i] * 100, raw_iou_per_class[i] * 100
-            ))
-        miou = torch.masked_select(iou_per_class, iou_mask).mean()
-        raw_miou = torch.masked_select(raw_iou_per_class, iou_mask).mean()
-        self.log("val/mIoU", miou, on_epoch=True, logger=True, batch_size=self.val_bsz)
-        self.log("val/raw_mIoU", raw_miou, on_epoch=True, logger=True, batch_size=self.val_bsz)
-        print("|-----------------------------------------|")
-        print("| Current mIoU | {:5.2f}% | {:5.2f}% | {:5.2f}% |".format(
-            miou * 100, self.best_miou * 100, raw_miou * 100
-        ))
-        print("|=========================================|")
-        # update best iou
-        if miou > self.best_miou:
-            self._update_miou(miou, iou_per_class)
-        # reset jaccard index
-        self.jaccard.reset()
-        self.jaccard_raw.reset()
+    # def on_validation_epoch_end(self):
+    #     # compute iou
+    #     iou_per_class = self.jaccard.compute()
+    #     raw_iou_per_class = self.jaccard_raw.compute()
+    #     iou_mask = torch.ones_like(iou_per_class, dtype=torch.bool)
+    #     iou_mask[self.builder.config["metric"]["ignore_index"]] = False
+    #     # log iou and miou
+    #     print("\n|==============IoU per class==============|")
+    #     print("| Name         |    IoU |   Best |    Raw |")
+    #     print("|-----------------------------------------|")
+    #     for i, iou in enumerate(iou_per_class):
+    #         if not iou_mask[i]:
+    #             continue
+    #         word = self.word_list[i]
+    #         self.log(f"val_iou/{word}", iou, batch_size=self.val_bsz, on_epoch=True)
+    #         print(f"| {word.ljust(13)}" + "| {:5.2f}% | {:5.2f}% | {:5.2f}% |".format(
+    #             iou * 100, self.best_iou_per_class[i] * 100, raw_iou_per_class[i] * 100
+    #         ))
+    #     miou = torch.masked_select(iou_per_class, iou_mask).mean()
+    #     raw_miou = torch.masked_select(raw_iou_per_class, iou_mask).mean()
+    #     self.log("val/mIoU", miou, on_epoch=True, logger=True, batch_size=self.val_bsz)
+    #     self.log("val/raw_mIoU", raw_miou, on_epoch=True, logger=True, batch_size=self.val_bsz)
+    #     print("|-----------------------------------------|")
+    #     print("| Current mIoU | {:5.2f}% | {:5.2f}% | {:5.2f}% |".format(
+    #         miou * 100, self.best_miou * 100, raw_miou * 100
+    #     ))
+    #     print("|=========================================|")
+    #     # update best iou
+    #     if miou > self.best_miou:
+    #         self._update_miou(miou, iou_per_class)
+    #     # reset jaccard index
+    #     self.jaccard.reset()
+    #     self.jaccard_raw.reset()
 
 
 # class MSegCeRes(ModuleBaseClass):

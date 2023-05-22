@@ -56,7 +56,7 @@ class Trainer:
             max_epochs=self.train_config["epochs"],
             default_root_dir=self.exp_dir,
             # resume_from_checkpoint=args.checkpoint,
-            profiler=self.profiler
+            # profiler=self.profiler
         )
         ############################
         # init model
@@ -97,4 +97,4 @@ if __name__ == "__main__":
         shutil.rmtree(exp_dir)
         raise e
     trainer.fit()
-    print(trainer.profiler.describe())
+    # print(trainer.profiler.describe())

@@ -157,8 +157,21 @@ def nb_process_label(processed_label, sorted_label_voxel_pair):
 
 
 def custom_collate_fn(inputs):
-    """Custom collate function to deal with batches that have different
-    numbers of samples per gpu.
+    """Custom collate function to deal with batches that have different numbers of samples per gpu.
+
+    Args:
+        inputs (list): a list of dictionaries or other types of data.
+
+    Returns:
+        output (dict or other types): a dictionary that contains the collated data for each key in the input
+        dictionaries, or the original inputs if they are not dictionaries.
+
+    Notes:
+        This function recursively calls itself if the values in the input dictionaries are also dictionaries.
+        This function uses a global variable collate_dict to specify how to collate different keys in the input
+        dictionaries.
+        This function tries to stack, hstack or tensorize the values in the input dictionaries according to their types
+        and shapes. If it fails, it returns a list of values instead.
     """
     if isinstance(inputs[0], dict):
         output = {}
@@ -174,14 +187,6 @@ def custom_collate_fn(inputs):
             elif name in collate_dict["hstack"]:
                 output[name] = torch.hstack(
                     [torch.tensor(input[name]) for input in inputs])
-            # elif name in ["Point", "Label"]:
-            #     output[name] = torch.concat(
-            #         [torch.tensor(input[name]) for input in inputs], dim=0)
-            # elif "range_image" == name or "range_mask" == name or "r2p_indices" == name:
-            #     output[name] = torch.stack([torch.tensor(input[name]).unsqueeze(0) for input in inputs],
-            #                                dim=0)
-            # elif "Point" in name or "Label" in name or "seq" in name:
-            #     output[name] = torch.concat([torch.tensor(input[name]) for input in inputs], dim=0)
             elif isinstance(inputs[0][name], np.ndarray):
                 try:
                     output[name] = torch.stack(

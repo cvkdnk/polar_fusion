@@ -55,7 +55,8 @@ class Asymm_3d(nn.Module):
 
         up0e = up0e.replace_feature(torch.cat((up0e.features, up1e.features), 1))
 
-        logits = self.logits(up0e)
+        # logits = self.logits(up0e)
+        logits = None
         return logits, up0e
 
 
@@ -161,10 +162,11 @@ class SegmentorMap(nn.Module):
         compress_feats = self.gen_compress_map(voxel_feats, device, batch_size)
         compress_feats.replace_feature(self.compress_mlp(compress_feats.features))
         N, N_s = voxel_feats.indices.shape[0], compress_feats.indices.shape[0]
-        position_feats = voxel_feats.indices[:, 1:].unsqueeze(1).extend(N, N_s, 3) - \
-                         compress_feats.indices[:, 1:].unsqueeze(0).extend(N, N_s, 3)
-        position_feats = position_feats.type(torch.float32)
-        position_feats = self.position_mlp(position_feats).squeeze()  # (N, N_s)
+        position_feats = voxel_feats.indices[:, 1:].unsqueeze(1).expand(N, N_s, 3) - \
+                         compress_feats.indices[:, 1:].unsqueeze(0).expand(N, N_s, 3)
+        position_feats = position_feats.type(torch.float32).view(N*N_s, 3)  # (N, 3, N_s)
+
+        position_feats = self.position_mlp(position_feats).view(N, N_s)  # (N, N_s)
 
         # 通过单层多头交叉注意力，向压缩地图查询特征
         feats_mhca = self.MHCA(voxel_feats, compress_feats, compress_feats, position_feats)
