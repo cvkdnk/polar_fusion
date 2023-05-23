@@ -5,7 +5,6 @@ import time
 import spconv.pytorch as spconv
 
 from utils.pf_base_class import InterfaceBase
-from utils.builders import Builder
 from utils.train_utils import AverageMeter
 from utils.data_utils import batch_upsampling
 from model.pl_base_model import ModuleBaseClass
