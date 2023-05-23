@@ -14,20 +14,14 @@ class ModelInterface(InterfaceBase):
     REGISTER = {}
 
     @classmethod
-    def get_model(cls, builder, ckpt=None):
-        name = builder.config["Model"]
+    def get_model(cls, config, ckpt=None):
+        name = config["Model"]
         if isinstance(name, str):
             if ckpt is not None:
-                return cls.REGISTER[name].load_from_checkpoint(ckpt, builder=builder)
-            return cls.REGISTER[name](builder)
+                return cls.REGISTER[name].load_from_checkpoint(ckpt)
+            return cls.REGISTER[name](config)
         class_type = cls.__name__.replace("Interface", "")
         raise TypeError(f"{class_type} in base.yaml should be str")
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
