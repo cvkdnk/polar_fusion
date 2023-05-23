@@ -235,7 +235,7 @@ class Asymm_3d_spconv(nn.Module):
     def __init__(self,
                  output_shape,
                  num_input_features=128,
-                 nclasses=20, init_size=16):
+                 nclasses=20, init_size=16, return_logits=True):
         super(Asymm_3d_spconv, self).__init__()
         self.nclasses = nclasses
 
@@ -258,8 +258,13 @@ class Asymm_3d_spconv(nn.Module):
 
         self.ReconNet = ReconBlock(2 * init_size, 2 * init_size, indice_key="recon")
 
-        self.logits = spconv.SubMConv3d(4 * init_size, nclasses, indice_key="logit", kernel_size=3, stride=1, padding=1,
-                                        bias=True)
+        self.return_logits = return_logits
+        if self.return_logits:
+            self.logits = spconv.SubMConv3d(
+                4 * init_size, nclasses,
+                indice_key="logit", kernel_size=3, stride=1, padding=1,
+                bias=True
+            )
 
     def forward(self, voxel_features, coors, batch_size):
         # x = x.contiguous()
@@ -280,6 +285,8 @@ class Asymm_3d_spconv(nn.Module):
         up0e = self.ReconNet(up1e)
 
         up0e = up0e.replace_feature(torch.cat((up0e.features, up1e.features), 1))
+        if self.return_logits:
+            logits = self.logits(up0e)
+            return logits.dense()
 
-        logits = self.logits(up0e)
-        return logits
+        return up0e

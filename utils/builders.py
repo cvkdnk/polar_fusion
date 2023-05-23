@@ -1,3 +1,5 @@
+import os
+
 import torch
 import yaml
 from torch.utils.data import Dataset
@@ -6,7 +8,7 @@ from torch.utils.data import DataLoader
 from dataloader import DatasetInterface, DataPipelineInterface
 from loss import LossInterface
 from utils.optimizer import OptimizerInterface
-# from model import ModelInterface
+from model import ModelInterface
 from utils.data_utils import custom_collate_fn
 from utils.config_utils import load_config
 
@@ -26,7 +28,7 @@ class Builder:
         self.exp_dir = exp_dir
         self.kitti_yaml = yaml.safe_load(open("./config/semantic-kitti.yaml", 'r'))
         self.loss = self.get_loss(device=device)
-        self.process_config()
+        self._process_config()
 
     def get_dataloader(self):
         """ 生成dataloader
@@ -78,7 +80,7 @@ class Builder:
         optimizer = OptimizerInterface.get(self.config["Optimizer"], self.config["optimizer"], params)
         return optimizer
 
-    def process_config(self):
+    def _process_config(self):
         for config_name in ["DataPipeline", "pipeline", "dataloader"]:
             for mode in ["train", "val", "test"]:
                 tmp = self.config[config_name]["base"].copy()
@@ -93,3 +95,4 @@ class Builder:
         train_config = yaml.safe_load(open("./config/train.yaml", 'r'))
         self.config["dataset"]["data_root"] = train_config.pop("data_root")
         self.config["train"] = train_config
+

@@ -14,8 +14,8 @@ def parse_args():
     parser.add_argument("--gen_from_base", "-g", action="store_true", help="Generate config files from base.yaml")
     parser.add_argument("--update", "-u", action="store_true", help="Update base config file")
     parser.add_argument("--force", "-f", action="store_true", help="Cover the existed config directory")
-    parser.add_argument("--gen_total", "-t", default=None, type=str, help="Generate total config file")
-    parser.add_argument("--gen_from_total", "-T", default=None, type=str, help="Generate config files from total.yaml")
+    parser.add_argument("--diy", "-d", action="store_true",
+                        help="Generate config files by user interface! Recommend!")
     return parser.parse_args()
 
 
@@ -57,16 +57,16 @@ def update_base_config():
         f.write("Loss: \n\n")
         write_tips(f, OptimizerInterface.REGISTER)
         f.write("Optimizer: Adam\n\n")
-        f.write("# Complete the file and run [python process_config.py -g]\n\n")
+        f.write("# Complete the file and run [python main.py -g]\n\n")
     print("Update base config file successfully.")
-    print("Please complete ./config/base.yaml and run [python process_config.py -g].")
+    print("Please complete ./config/base.yaml and run [python main.py -g].")
 
 
 def gen_from_base():
     if not os.path.exists("config/base.yaml"):
         update_base_config()
         print("base.yaml is not found. Create a new one.")
-        raise FileNotFoundError("Need to complete the base config file and run [python process_config.py -b] again.")
+        raise FileNotFoundError("Need to complete the base config file and run [python main.py -b] again.")
     with open("./config/base.yaml", 'r') as f:
         base_config = yaml.load(f, Loader=yaml.FullLoader)
     examine_config(base_config)
@@ -110,6 +110,103 @@ def gen_from_base():
     print("Generate config files successfully, in {}".format(work_path+"/config.yaml"))
 
 
+def gen_from_interface():
+    """generate config files from interface, code very ugly"""
+    print("======================Config DIY==========================")
+    print("experiment directory list: ", os.listdir("./experiments/"))
+    print("input your expdir: ./experiments/", end="")
+    exp_dir = "./experiments/" + input()
+    if not os.path.exists(exp_dir):
+        print("expdir not exists, mkdir")
+        os.mkdir(exp_dir)
+
+    def diy_module(mode: str):
+        if mode == "dataset":
+            interface = DatasetInterface
+        elif mode == "model":
+            interface = ModelInterface
+        elif mode == "loss":
+            interface = LossInterface
+        elif mode == "optimizer":
+            interface = OptimizerInterface
+        else:
+            raise RuntimeError("mode should be dataset, model, loss or optimizer")
+        print("choose a " + mode + ": ", interface.REGISTER.keys())
+        print("input: ", end="")
+        name = input()
+        config = interface.gen_config_template(name)
+        print(yaml.dump(config, sort_keys=False, indent=4, default_flow_style=False))
+        print("change the config by use dict format, input nothing to skip")
+        print("for example: {\"base\": {\"batch_size\": 4}}")
+        print("input: ", end="")
+        change = input()
+        if change:
+            config.update(yaml.load(change, Loader=yaml.FullLoader))
+        return name, config
+
+    def diy_datapipeline():
+        print("Data pipeline is used to process the data from dataset's __getitem__ in order.")
+        print("Firstly, you need to choose pipelines used in train, val and test")
+        print("If you dont want to use a pipeline in a mode, just input nothing")
+        print("choose pipelines for base(split by space): ", DataPipelineInterface.REGISTER.keys())
+        print("input: ", end="")
+        pipelines = input().split()
+        if pipelines:
+            pipelines = {"base": pipelines}
+        else:
+            pipelines = {}
+        for mode in ["train", "val", "test"]:
+            print("choose pipelines for " + mode + ": ", DataPipelineInterface.REGISTER.keys())
+            print("input: ", end="")
+            pipelines_list = input().split()
+            if pipelines_list:
+                pipelines[mode] = pipelines_list
+        config = {}
+        for mode in pipelines:
+            config[mode] = {}
+            for pipeline in pipelines[mode]:
+                config[mode][pipeline] = DataPipelineInterface.gen_config_template(pipeline)
+        print(yaml.dump(config, sort_keys=False, indent=4, default_flow_style=False))
+        print("change the config by use dict format, input nothing to skip")
+        print("for example: {\"base\": {\"batch_size\": 4}}")
+        print("input: ", end="")
+        change = input()
+        if change:
+            config.update(yaml.load(change, Loader=yaml.FullLoader))
+        return pipelines, config
+
+    # 生成配置文件，其中涉及到字典添加顺序以及配置文件添加注释的问题，因此代码比较繁琐
+    config = {"Dirname": exp_dir.split("/")[-1]}
+    detail_config = {}
+
+    def mode_config(mode):
+        name, mode_config = diy_module(mode)
+        mode_up = mode[0].upper() + mode[1:]
+        config[mode_up] = name
+        detail_config[mode] = mode_config
+
+    mode_config("dataset")
+    pipelines, pipeline_config = diy_datapipeline()
+    config["DataPipeline"] = pipelines
+    detail_config["dataloader"] = {
+            "base": {"batch_size": 4, "num_workers": 4, "pin_memory": True},
+            "train": {"shuffle": True, "drop_last": False},
+        }
+    detail_config["pipeline"] = pipeline_config
+    for mode in ["model", "loss", "optimizer"]:
+        mode_config(mode)
+    examine_config(config)
+
+    with open(exp_dir + "/config.yaml", 'w') as f:
+        yaml.dump(config, f)
+        f.write("##################################\n")
+        f.write("# Detail Config:##################\n")
+        for k in detail_config:
+            f.write("# " + k + "====================\n")
+            yaml.dump({k: detail_config[k]}, f, sort_keys=False)
+    print("Generate config files successfully, in {}".format(exp_dir + "/config.yaml"))
+
+
 def gen_config(config_path, config=None):
     if config is None:
         config = load_config(config_path)
@@ -144,6 +241,8 @@ def main(args):
         update_base_config()
     if args.gen_total is not None:
         gen_config(args.gen_total)
+    if args.diy is not None:
+        gen_from_interface()
     # elif args.gen_from_total is not None:
     #     total_cover_tree(args.gen_from_total)
 

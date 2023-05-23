@@ -2,15 +2,9 @@
 
 ## 使用说明
 
-### base.yaml
+### 生成配置文件
 
-首先，本项目一切配置文件由`./config/base.yaml`生成，可以根据自己的需求更改该`base.yaml`文件生成详细的默认配置文件。生成的配置文件在`./experiments/`目录下。在修改`base.yaml`文件之前，请确保`base.yaml`文件包含了最新更改的内容。使用如下命令来更新`base.yaml`文件：
-
-`python process_config.py -u`
-
-修改`base.yaml`文件后，可以从`base.yaml`生成详细的项目配置文件。
-
-`python process_config.py -g`
+运行 `python main.py -d` 即可通过交互式命令行生成详细配置文件。
 
 此时，所有参数均有默认数值，可以根据自己需求修改相应的参数值。 如果需要进一步了解各参数的含义，请找到参数所在文件查找函数的docstring获取更多信息。
 
@@ -36,7 +30,7 @@
 
 在生成的`self.xx_loader`对象中，可以由生成器生成一个batch的数据。在本项目中，每个batch的数据由字典组成。不经过任何数据预处理生成的batch字典数据中，`batch["Point"]`中存储了原始点云数据、`batch["Label"]`中存储了原始点云对应的语义标签数据，`batch["PointsNum"]`中存储了点云数量信息，`batch["SeqFrame"]`中存储了点云对应的文件序号和文件名。
 
-注意，如果`batch_size`不为1时，`batch["Point"]`中数据的维度为1，长度为该batch中所有点云场景的点数量之和，此时，前`batch["PointsNum"][0]`个数据为第一个场景的点云数据，以此类推。
+注意，如果`batch_size`不为1时，`batch["Point"]`中数据的维度不包含batch，长度为该batch中所有点云场景的点数量之和，此时，前`batch["PointsNum"][0]`个数据为第一个场景的点云数据，以此类推。
 
 如果在数据预处理中加入了将点云投影到其他空间中的操作，那么可以在`batch["SpaceName]`中访问相应的数据。具体请参考数据预处理中相应类的注释。
 

@@ -27,5 +27,5 @@ Loss: MultiLogitsLoss
 # [Adam] [SGD]
 Optimizer: Adam
 
-# Complete the file and run [python process_config.py -g]
+# Complete the file and run [python main.py -g]
 
