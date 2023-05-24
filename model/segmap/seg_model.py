@@ -3,61 +3,6 @@ import math
 import torch_scatter
 from torch import nn
 from torch.nn import functional as F
-from model.cy3d_spconv.segmentator_3d_asymm_spconv import *
-
-class Asymm_3d(nn.Module):
-    def __init__(self,
-                 output_shape,
-                 num_input_features=128,
-                 nclasses=20, init_size=16):
-        super(Asymm_3d, self).__init__()
-        self.nclasses = nclasses
-
-        sparse_shape = np.array(output_shape)
-        # sparse_shape[0] = 11
-        self.sparse_shape = sparse_shape
-
-        self.downCntx = ResContextBlock(num_input_features, init_size, indice_key="pre")
-        self.resBlock2 = ResBlock(init_size, 2 * init_size, 0.2, height_pooling=True, indice_key="down2")
-        self.resBlock3 = ResBlock(2 * init_size, 4 * init_size, 0.2, height_pooling=True, indice_key="down3")
-        self.resBlock4 = ResBlock(4 * init_size, 8 * init_size, 0.2, pooling=True, height_pooling=False,
-                                  indice_key="down4")
-        self.resBlock5 = ResBlock(8 * init_size, 16 * init_size, 0.2, pooling=True, height_pooling=False,
-                                  indice_key="down5")
-
-        self.upBlock0 = UpBlock(16 * init_size, 16 * init_size, indice_key="up0", up_key="down5")
-        self.upBlock1 = UpBlock(16 * init_size, 8 * init_size, indice_key="up1", up_key="down4")
-        self.upBlock2 = UpBlock(8 * init_size, 4 * init_size, indice_key="up2", up_key="down3")
-        self.upBlock3 = UpBlock(4 * init_size, 2 * init_size, indice_key="up3", up_key="down2")
-
-        self.ReconNet = ReconBlock(2 * init_size, 2 * init_size, indice_key="recon")
-
-        self.logits = spconv.SubMConv3d(4 * init_size, nclasses, indice_key="logit", kernel_size=3, stride=1, padding=1,
-                                        bias=True)
-
-    def forward(self, voxel_features, coors, batch_size):
-        # x = x.contiguous()
-        coors = coors.int()
-        ret = spconv.SparseConvTensor(voxel_features, coors, self.sparse_shape,
-                                      batch_size)
-        ret = self.downCntx(ret)
-        down1c, down1b = self.resBlock2(ret)
-        down2c, down2b = self.resBlock3(down1c)
-        down3c, down3b = self.resBlock4(down2c)
-        down4c, down4b = self.resBlock5(down3c)
-
-        up4e = self.upBlock0(down4c, down4b)
-        up3e = self.upBlock1(up4e, down3b)
-        up2e = self.upBlock2(up3e, down2b)
-        up1e = self.upBlock3(up2e, down1b)
-
-        up0e = self.ReconNet(up1e)
-
-        up0e = up0e.replace_feature(torch.cat((up0e.features, up1e.features), 1))
-
-        # logits = self.logits(up0e)
-        logits = None
-        return logits, up0e
 
 
 class MultiHeadAttention(nn.Module):

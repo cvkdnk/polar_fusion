@@ -54,6 +54,7 @@ class cylinder_fea(nn.Module):
             self.pt_fea_dim = self.pool_dim
 
     def forward(self, point_feats, pt_vox_coords):
+        """参数分别为点特征和点对应体素坐标"""
         cur_dev = point_feats[0].get_device()
         cat_pt_vox_coords = []
         for batch_idx in range(len(point_feats)):
@@ -64,9 +65,9 @@ class cylinder_fea(nn.Module):
         pt_num = cat_pt_vox_coords.shape[0]
 
         # shuffle the data
-        # shuffled_ind = torch.randperm(pt_num, device=cur_dev)
-        # cat_pt_fea = cat_pt_fea[shuffled_ind, :]
-        # cat_pt_vox_coords = cat_pt_vox_coords[shuffled_ind, :]
+        shuffled_ind = torch.randperm(pt_num, device=cur_dev)
+        cat_pt_fea = cat_pt_fea[shuffled_ind, :]
+        cat_pt_vox_coords = cat_pt_vox_coords[shuffled_ind, :]
 
         # unique xy grid index
         unq, unq_inv, unq_cnt = torch.unique(cat_pt_vox_coords, return_inverse=True, return_counts=True, dim=0)

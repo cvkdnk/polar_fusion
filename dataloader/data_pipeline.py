@@ -42,37 +42,6 @@ class DataPipelineInterface(InterfaceBase):
             data.update(cls.gen_default(pl)(data))
         return data
 
-    # @staticmethod
-    # def plt(data, save_path, save_name, kitti_yaml):
-    #     import open3d as o3d
-    #     import cv2, os
-    #     from utils.data_utils import label_mapping
-    #     if "Range" in data.keys():
-    #         # write range
-    #         range_image_depth = data["Range"]["range_image"][..., 0]
-    #         cv2.imwrite(os.path.join(save_path, save_name+"_range_d.png"), range_image_depth)
-    #         if "Label" in data.keys():
-    #             labels = data["Label"]
-    #             range_labels = labels[data["Range"]["p2r"]]
-    #             range_labels = label_mapping(range_labels, kitti_yaml["learning_map_inv"])
-    #             range_color = np.zeros((range_labels.shape[0], range_labels.shape[1], 3), dtype=np.int32)
-    #             for i in range(range_labels.shape[0]):
-    #                 for j in range(range_labels.shape[1]):
-    #                     range_color[i, j] = np.array(kitti_yaml["color_map"][range_labels[i, j]])
-    #             cv2.imwrite(os.path.join(save_path, save_name+"_range_bgr.png"), range_color)
-    #
-    #     # write point cloud
-    #     pcd = o3d.geometry.PointCloud()
-    #     pcd.points = o3d.utility.Vector3dVector(data["Point"][..., :3])
-    #     o3d.io.write_point_cloud(os.path.join(save_path, save_name+"_pt.xyz"), pcd)
-    #
-    #     # write voxel
-    #     voxel_grid = o3d.geometry.VoxelGrid()
-    #     pcd = o3d.geometry.PointCloud()
-    #     pcd.points = o3d.utility.Vector3dVector(data["Voxel"]["voxel_feats_st"].C.numpy())
-    #     voxel_grid.create_from_point_cloud(pcd, voxel_size=1)
-    #     o3d.io.write_voxel_grid(os.path.join(save_path, save_name+"_voxel.xyz"), )
-
 
 class DataPipelineBaseClass(PFBaseClass):
     RETURN_TYPE = None
@@ -137,13 +106,15 @@ class PointAugmentor(DataPipelineBaseClass):
         self.jitter = config["jitter"]
         self.scale = config["scale"]
         self.flip = config["flip"]
+        self.transform = config["transform""]
 
     @classmethod
     def gen_config_template(cls):
         return {
             "rotate": {'inuse': True, 'rotation_range': 180},
             "jitter": {'inuse': True, 'sigma': 0.01, 'clip': 0.05},
-            "scale": {'inuse': True, 'scale_range': 0.1},
+            "transform": {'inuse': True, 'transform_std': 0.1},
+            "scale": {'inuse': True, 'scale_range': 0.05},
             "flip": {'inuse': True}
         }
 
@@ -153,6 +124,7 @@ class PointAugmentor(DataPipelineBaseClass):
             self.rotate_point_cloud(pt_features[:, :3], self.rotate["rotation_range"])
         if self.jitter["inuse"]:
             self.jitter_point_cloud(pt_features[:, :3], self.jitter["sigma"], self.jitter["clip"])
+
         if self.scale["inuse"]:
             self.scale_point_cloud(pt_features[:, :3], self.scale["scale_range"])
         if self.flip["inuse"]:
@@ -185,17 +157,29 @@ class PointAugmentor(DataPipelineBaseClass):
         N, C = points.shape
         assert (clip > 0)
         jittered_data = np.clip(sigma * np.random.randn(N, C), -1 * clip, clip)
+
         points += jittered_data
 
     @staticmethod
-    def scale_point_cloud(points, scale_low=0.95, scale_high=1.05):
+    def transform_point_cloud(points, trans_std):
+        """ Cylinder3D's transform augment, which is
+        """
+        noise_translate = np.array([np.random.normal(0, trans_std[0], 1),
+                                    np.random.normal(0, trans_std[1], 1),
+                                    np.random.normal(0, trans_std[2], 1)]).T
+
+        points[:, 0:3] += noise_translate
+        return points
+
+    @staticmethod
+    def scale_point_cloud(points, scale_range):
         """ Randomly scale the point clouds. Scale is per point cloud.
             Input:
               Nx3 array, original point clouds
             Return:
               Nx3 array, scaled point clouds
         """
-        scaled_data = np.random.uniform(scale_low, scale_high)
+        scaled_data = np.random.uniform(1-scale_range, 1+scale_range, 3)
         points *= scaled_data
 
     @staticmethod

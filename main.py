@@ -239,8 +239,6 @@ def main(args):
         gen_from_base()
     if args.update:
         update_base_config()
-    if args.gen_total is not None:
-        gen_config(args.gen_total)
     if args.diy is not None:
         gen_from_interface()
     # elif args.gen_from_total is not None:
