@@ -292,19 +292,6 @@ class Cylinder(DataPipelineBaseClass):
         return return_fea
 
 
-class CylinderGeneral(Cylindrical):
-    def __init__(self, ignore_label=0, **config):
-        super(Cylindrical, self).__init__()
-        self.fixed_volume_space = config["fixed_volume_space"]
-        self.grid_shape = np.array(config["grid_shape"])
-        self.ignore_label = ignore_label
-
-    @staticmethod
-    def init_feats(pt_features, coords_pol, coords, voxel_coords, grid_size, min_bound):
-        raise NotImplementedError
-
-
-
 @DataPipelineInterface.register
 class RangeProject(DataPipelineBaseClass):
     RETURN_TYPE = "Range"
@@ -387,8 +374,7 @@ class BevProject(DataPipelineBaseClass):  # TODO: complete this
         return {}
 
     def __call__(self, data):
-        pt_features = data["Point"]
-        return {"Bev": pt_features[..., 1:3]}
+        pass
 
 
 @DataPipelineInterface.register
