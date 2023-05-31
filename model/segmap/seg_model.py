@@ -75,7 +75,7 @@ class SegMap_pooling(nn.Module):
         super().__init__()
         self.compress_ratio = compress_ratio
         self.query_gs_ratio = [2, 2, 4]
-        self.mhca = MultiHeadCrossAttentionSublayer(input_dim, input_dim, input_dim, output_dim, num_heads)
+        self.mhca = MultiHeadCrossAttentionSublayer(input_dim, input_dim, input_dim, input_dim, num_heads)
         self.pool_mlp = nn.Linear(input_dim, input_dim)
         self.embedding_mlp = nn.Linear(input_dim, input_dim)
         assert pe_type in ['sine', 'fourier'] or pe_type is None
@@ -85,7 +85,7 @@ class SegMap_pooling(nn.Module):
             normalize=pe_norm
         )
         self.seg_head = spconv.SubMConv3d(
-            input_dim+output_dim, 20, indice_key="seg_head",
+            input_dim*2, output_dim, indice_key="seg_head",
             kernel_size=3, stride=1, padding=1, bias=True
         )
 
@@ -104,23 +104,22 @@ class SegMap_pooling(nn.Module):
         embedding_feats = self.embedding_mlp(voxel_feats.features)
         embedding_coords = voxel_feats.indices / torch.tensor([1] + self.compress_ratio, device=device)
         embedding_coords = embedding_coords.type(torch.int32)
-        embedding_coords, unq_inv, unq_cnt = torch.unique(embedding_coords, return_inverse=True, return_counts=True, dim=0)
-        embedding_coords = embedding_coords.type(torch.int32)
+        unq, unq_inv, unq_cnt = torch.unique(embedding_coords, return_inverse=True, return_counts=True, dim=0)
         embedding_feats, idx = torch_scatter.scatter_max(embedding_feats, unq_inv, dim=0)
-        embedding_coords = embedding_coords[idx].mean(dim=1)  # (N_e, 3)
+        embedding_coords = embedding_coords[idx].type(torch.float32).mean(dim=1)  # (N_e, 3)
 
         # 位置编码
         for i in range(batch_size):
             emb_mask = embedding_coords[:, 0] == i
             pool_mask = pool_coords[:, 0] == i
             pe_coords = torch.cat([embedding_coords[emb_mask, 1:], pool_coords[pool_mask, 1:]], dim=0)
-            pe_coords = self.position_encoding(pe_coords)
+            pe_coords = self.position_encoding(pe_coords).squeeze().transpose(1, 0)
             embedding_feats[emb_mask] += pe_coords[:emb_mask.sum()]
             pool_feats[pool_mask] += pe_coords[emb_mask.sum():]
 
         # 通过单层多头交叉注意力，向压缩地图查询特征
         embedding_feats = spconv.SparseConvTensor(
-            embedding_feats, embedding_coords,
+            embedding_feats, embedding_coords.int(),
             [x // y for x, y in zip(voxel_feats.spatial_shape, self.compress_ratio)],
             batch_size
         )
@@ -129,9 +128,9 @@ class SegMap_pooling(nn.Module):
             [x // y for x, y in zip(voxel_feats.spatial_shape, self.query_gs_ratio)],
             batch_size
         )
-        feats_mhca = self.mhca(embedding_feats, pool_feats, pool_feats, None)
+        feats_mhca = self.mhca(pool_feats, embedding_feats, embedding_feats, None)
         voxel_mhca_feats = feats_mhca.features[pool_inv]
-        voxel_feats.replace_feature(torch.cat([voxel_feats.features, voxel_mhca_feats]))
+        voxel_feats = voxel_feats.replace_feature(torch.cat([voxel_feats.features, voxel_mhca_feats], dim=1))
         logits = self.seg_head(voxel_feats)
         return logits  # SparseConvTensor
 

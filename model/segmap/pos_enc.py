@@ -123,8 +123,6 @@ class PositionEmbeddingCoordsSine(nn.Module):
 
     def forward(self, xyz, num_channels=None, input_range=None):
         assert isinstance(xyz, torch.Tensor)
-        assert xyz.ndim == 3
-        # xyz is batch x npoints x 3
         if self.pos_type == "sine":
             with torch.no_grad():
                 out = self.get_sine_embeddings(xyz, num_channels, input_range)

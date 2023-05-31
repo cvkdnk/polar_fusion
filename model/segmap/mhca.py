@@ -29,26 +29,43 @@ class MultiHeadAttention(nn.Module):
         Q = Q.view(-1, self.num_heads, self.dim).permute(1, 0, 2)  # shape: (num_heads, N_q, dim)
         K = K.view(-1, self.num_heads, self.dim).permute(1, 0, 2) # shape: (num_heads, N_k, dim)
         V = V.view(-1, self.num_heads, self.dim).permute(1, 0, 2) # shape: (num_heads, N_v, dim)
-        # calculate scores
-        scores = torch.matmul(Q, K.transpose(-2, -1)) / self.scale # shape: (num_heads, N_q, N_k)
-        if pos_enc is not None:
-            scores += pos_enc
-        # create a mask to avoid attention between different batches
-        mask = query.indices[:, 0].unsqueeze(-1) != key.indices[:, 0].unsqueeze(-2) # shape: (N_q, N_k)
-        mask = mask.unsqueeze(0) # shape: (1, N_q, N_k)
-        mask = mask.expand(self.num_heads, -1, -1) # shape: (num_heads, N_q, N_k)
-        # apply mask to scores
-        scores = scores.masked_fill(mask == True, -1e9) # shape: (num_heads, N_q, N_k)
-        # apply softmax
-        scores = F.softmax(scores, dim=-1) # shape: (num_heads, N_q, N_k)
-        # apply attention
-        h = torch.matmul(scores, V) # shape: (num_heads, N_q, dim)
-        # concatenate heads
+
+        # shape: (num_heads, N_q, output_dim)
+        h = torch.empty((self.num_heads, Q.shape[1], self.dim), dtype=Q.dtype, device=Q.device)
+
+        for i in range(batch_size):
+            Q_i = Q[:, query.indices[:, 0] == i, :] # shape: (num_heads, N_q_i, dim)
+            K_i = K[:, key.indices[:, 0] == i, :] # shape: (num_heads, N_k_i, dim)
+            V_i = V[:, value.indices[:, 0] == i, :] # shape: (num_heads, N_v_i, dim)
+            scores_i = torch.matmul(Q_i, K_i.transpose(-2, -1)) / self.scale # shape: (num_heads, N_q_i, N_k_i)
+            if pos_enc is not None:
+                scores_i += pos_enc[query.indices[:, 0] == i, key.indices[:, 0] == i]
+            scores_i = F.softmax(scores_i, dim=-1) # shape: (num_heads, N_q_i, N_k_i)
+            h[:, query.indices[:, 0] == i, :] = torch.matmul(scores_i, V_i) # shape: (num_heads, N_q_i, dim)
+
         h = h.permute(1, 0, 2).contiguous() # shape: (N_q, num_heads, dim)
         h = h.view(-1, self.output_dim) # shape: (N_q, output_dim)
-        # apply output projection
         h = self.W_o(h) # shape: (N_q, output_dim)
-        # create a SparseConvTensor for the output
+        # # calculate scores
+        # scores = torch.matmul(Q, K.transpose(-2, -1)) / self.scale # shape: (num_heads, N_q, N_k)
+        # if pos_enc is not None:
+        #     scores += pos_enc
+        # # create a mask to avoid attention between different batches
+        # mask = query.indices[:, 0].unsqueeze(-1) != key.indices[:, 0].unsqueeze(-2) # shape: (N_q, N_k)
+        # mask = mask.unsqueeze(0) # shape: (1, N_q, N_k)
+        # mask = mask.expand(self.num_heads, -1, -1) # shape: (num_heads, N_q, N_k)
+        # # apply mask to scores
+        # scores = scores.masked_fill(mask == True, -1e9) # shape: (num_heads, N_q, N_k)
+        # # apply softmax
+        # scores = F.softmax(scores, dim=-1) # shape: (num_heads, N_q, N_k)
+        # # apply attention
+        # h = torch.matmul(scores, V) # shape: (num_heads, N_q, dim)
+        # # concatenate heads
+        # h = h.permute(1, 0, 2).contiguous() # shape: (N_q, num_heads, dim)
+        # h = h.view(-1, self.output_dim) # shape: (N_q, output_dim)
+        # # apply output projection
+        # h = self.W_o(h) # shape: (N_q, output_dim)
+        # # create a SparseConvTensor for the output
         output = spconv.SparseConvTensor(h, query.indices,
                                          query.spatial_shape,
                                          query.batch_size)
