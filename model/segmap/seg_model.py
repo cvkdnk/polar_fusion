@@ -6,6 +6,8 @@ from torch.nn import functional as F
 import spconv.pytorch as spconv
 
 from model.segmap.mhca import MultiHeadCrossAttentionSublayer
+from model.segmap.pos_enc import PositionEmbeddingCoordsSine
+from utils.model_utils import pcd_normalize
 
 
 class SegmentorMap(nn.Module):
@@ -67,9 +69,76 @@ class SegmentorMap(nn.Module):
 
 
 class SegMap_pooling(nn.Module):
-    def __init__(self, input_dim, output_dim, compress_ratio, num_heads):
+    """对Q用GS下采样、对KV用maxpool下采样，分别进行位置编码"""
+    def __init__(self, input_dim, output_dim, compress_ratio, num_heads, pe_type='sine', pe_norm=True):
+        self.num_channels = input_dim
         super().__init__()
+        self.compress_ratio = compress_ratio
+        self.query_gs_ratio = [2, 2, 4]
         self.mhca = MultiHeadCrossAttentionSublayer(input_dim, input_dim, input_dim, output_dim, num_heads)
-        
+        self.pool_mlp = nn.Linear(input_dim, input_dim)
+        self.embedding_mlp = nn.Linear(input_dim, input_dim)
+        assert pe_type in ['sine', 'fourier'] or pe_type is None
+        self.position_encoding = PositionEmbeddingCoordsSine(
+            pos_type=pe_type,
+            d_pos=input_dim,  # encoding channels number (128)
+            normalize=pe_norm
+        )
+        self.seg_head = spconv.SubMConv3d(
+            input_dim+output_dim, 20, indice_key="seg_head",
+            kernel_size=3, stride=1, padding=1, bias=True
+        )
+
+    def forward(self, voxel_feats, batch_size):
+        device = voxel_feats.features.device
+        # 生成池化特征，相当于用GS下采样
+        pool_feats = self.pool_mlp(voxel_feats.features)
+        pool_coords = voxel_feats.indices / torch.tensor([1]+self.query_gs_ratio, device=device)
+        pool_coords = pool_coords.type(torch.int32)
+        pool_coords, unq_inv, unq_cnt = torch.unique(pool_coords, return_inverse=True, return_counts=True, dim=0)
+        pool_coords = pool_coords.type(torch.int32)
+        pool_feats = torch_scatter.scatter_max(pool_feats, unq_inv, dim=0)[0]
+        pool_inv = unq_inv
+
+        # 生成压缩嵌入特征，使用maxpool寻找最大特征，再下采样
+        embedding_feats = self.embedding_mlp(voxel_feats.features)
+        embedding_coords = voxel_feats.indices / torch.tensor([1] + self.compress_ratio, device=device)
+        embedding_coords = embedding_coords.type(torch.int32)
+        embedding_coords, unq_inv, unq_cnt = torch.unique(embedding_coords, return_inverse=True, return_counts=True, dim=0)
+        embedding_coords = embedding_coords.type(torch.int32)
+        embedding_feats, idx = torch_scatter.scatter_max(embedding_feats, unq_inv, dim=0)
+        embedding_coords = embedding_coords[idx].mean(dim=1)  # (N_e, 3)
+
+        # 位置编码
+        for i in range(batch_size):
+            emb_mask = embedding_coords[:, 0] == i
+            pool_mask = pool_coords[:, 0] == i
+            pe_coords = torch.cat([embedding_coords[emb_mask, 1:], pool_coords[pool_mask, 1:]], dim=0)
+            pe_coords = self.position_encoding(pe_coords)
+            embedding_feats[emb_mask] += pe_coords[:emb_mask.sum()]
+            pool_feats[pool_mask] += pe_coords[emb_mask.sum():]
+
+        # 通过单层多头交叉注意力，向压缩地图查询特征
+        embedding_feats = spconv.SparseConvTensor(
+            embedding_feats, embedding_coords,
+            [x // y for x, y in zip(voxel_feats.spatial_shape, self.compress_ratio)],
+            batch_size
+        )
+        pool_feats = spconv.SparseConvTensor(
+            pool_feats, pool_coords,
+            [x // y for x, y in zip(voxel_feats.spatial_shape, self.query_gs_ratio)],
+            batch_size
+        )
+        feats_mhca = self.mhca(embedding_feats, pool_feats, pool_feats, None)
+        voxel_mhca_feats = feats_mhca.features[pool_inv]
+        voxel_feats.replace_feature(torch.cat([voxel_feats.features, voxel_mhca_feats]))
+        logits = self.seg_head(voxel_feats)
+        return logits  # SparseConvTensor
+
+
+
+
+
+
 
 
