@@ -74,7 +74,7 @@ class SegMap_pooling(nn.Module):
         self.num_channels = input_dim
         super().__init__()
         self.compress_ratio = compress_ratio
-        self.query_gs_ratio = [2, 2, 4]
+        self.query_gs_ratio = [2, 2, 2]
         self.mhca = MultiHeadCrossAttentionSublayer(input_dim, input_dim, input_dim, input_dim, num_heads)
         self.pool_mlp = nn.Linear(input_dim, input_dim)
         self.embedding_mlp = nn.Linear(input_dim, input_dim)
@@ -85,7 +85,7 @@ class SegMap_pooling(nn.Module):
             normalize=pe_norm
         )
         self.seg_head = spconv.SubMConv3d(
-            input_dim*2, output_dim, indice_key="seg_head",
+            input_dim, output_dim, indice_key="seg_head",
             kernel_size=3, stride=1, padding=1, bias=True
         )
 
@@ -106,7 +106,7 @@ class SegMap_pooling(nn.Module):
         embedding_coords = embedding_coords.type(torch.int32)
         unq, unq_inv, unq_cnt = torch.unique(embedding_coords, return_inverse=True, return_counts=True, dim=0)
         embedding_feats, idx = torch_scatter.scatter_max(embedding_feats, unq_inv, dim=0)
-        embedding_coords = embedding_coords[idx].type(torch.float32).mean(dim=1)  # (N_e, 3)
+        embedding_coords = embedding_coords[idx].type(torch.float32).mean(dim=1)
 
         # 位置编码
         for i in range(batch_size):
@@ -119,7 +119,7 @@ class SegMap_pooling(nn.Module):
 
         # 通过单层多头交叉注意力，向压缩地图查询特征
         embedding_feats = spconv.SparseConvTensor(
-            embedding_feats, embedding_coords.int(),
+            embedding_feats, embedding_coords.type(torch.int32),
             [x // y for x, y in zip(voxel_feats.spatial_shape, self.compress_ratio)],
             batch_size
         )
@@ -130,7 +130,8 @@ class SegMap_pooling(nn.Module):
         )
         feats_mhca = self.mhca(pool_feats, embedding_feats, embedding_feats, None)
         voxel_mhca_feats = feats_mhca.features[pool_inv]
-        voxel_feats = voxel_feats.replace_feature(torch.cat([voxel_feats.features, voxel_mhca_feats], dim=1))
+        # voxel_feats = voxel_feats.replace_feature(torch.cat([voxel_feats.features, voxel_mhca_feats], dim=1))
+        voxel_feats = voxel_feats.replace_feature(voxel_feats.features+voxel_mhca_feats)
         logits = self.seg_head(voxel_feats)
         return logits  # SparseConvTensor
 
