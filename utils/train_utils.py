@@ -1,4 +1,5 @@
 import math
+from torch import nn
 
 
 class AverageMeter(object):
@@ -25,3 +26,13 @@ class AverageMeter(object):
     def __str__(self):
         # 返回平均值和标准差的字符串表示
         return f"{self.avg:.4f} ({self.std:.4f})"
+
+
+class FfsLoss(nn.Module):
+    def __init__(self):
+        super(FfsLoss, self).__init__()
+
+    def forward(self, feats):
+        diag = feats.diag().unsqueeze(0).expand_as(feats)
+        cost = diag - feats
+        return cost.mean()

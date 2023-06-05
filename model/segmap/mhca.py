@@ -20,6 +20,8 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, query, key, value, pos_enc=None):
         """query, key and value should be SparseConvTensor"""
+        assert isinstance(query, spconv.SparseConvTensor) and isinstance(key, spconv.SparseConvTensor) \
+               and isinstance(value, spconv.SparseConvTensor)
         batch_size = query.batch_size  # get the batch size from the query SparseConvTensor
         # project query, key and value
         Q = self.W_q(query.features)  # shape: (N_q, output_dim)
@@ -84,10 +86,32 @@ class MultiHeadCrossAttentionSublayer(nn.Module):
         )
         self.ln2 = nn.LayerNorm(output_dim) # layer normalization 2
 
-    def forward(self, query, key, value, pois_encoding=None):
-        feats_mhca = self.mhca(query, key, value, pois_encoding) # calculate multi-head cross attention
+    def forward(self, query, key, value, pos_enc=None):
+        feats_mhca = self.mhca(query, key, value, pos_enc) # calculate multi-head cross attention
         res0 = self.ln1(feats_mhca.features + query.features) # add residual connection and layer normalization 1
         feats_mlp = self.mlp(res0) # calculate feed-forward network
         feats_mlp = self.ln2(feats_mlp + res0) # add residual connection and layer normalization 2
         feats_mhca.replace_feature(feats_mlp) # replace the features of the multi-head cross attention with the output of the feed-forward network
         return feats_mhca
+
+
+class SegMapAttentionSublayer(nn.Module):
+    def __init__(self, query_dim, key_dim, value_dim, output_dim, num_heads, res=False):
+        super().__init__()
+        self.res = res
+        self.mhca = MultiHeadCrossAttentionSublayer(
+            query_dim, key_dim, value_dim, output_dim, num_heads
+        ) # use the previous MultiHeadCrossAttentionSublayer class
+        self.mhsa = MultiHeadAttention(
+            key_dim, key_dim, value_dim, output_dim, num_heads
+        )
+        self.ln = nn.LayerNorm(output_dim) # layer normalization used in mhsa
+
+    def forward(self, feats_p, feats_s, pos_enc=None):
+        res0 = self.mhsa(feats_s, feats_s, feats_s, pos_enc) # calculate multi-head self attention
+        feats_mhsa = res0.replace_feature(self.ln(res0.features+feats_s.features)) # add residual connection and layer normalization
+        feats_mhca = self.mhca(feats_p, feats_mhsa, feats_mhsa, pos_enc) # calculate multi-head cross attention
+        if self.res:
+            feats_mhca = feats_mhca.replace_feature(feats_p.features+feats_mhca.features) # add residual connection
+        return feats_mhca, feats_mhsa
+
