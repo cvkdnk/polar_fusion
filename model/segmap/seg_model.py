@@ -113,7 +113,7 @@ class SegMap_pooling(nn.Module):
         feats_mhca, feats_mhsa = pool_feats, embedding_feats
         for sublayer in self.mha_stack:
             feats_mhca, feats_mhsa = sublayer(feats_mhca, feats_mhsa, None)
-        if self.embed_type == 'pool':
+        if pool_inv is not None:
             voxel_mhca_feats = feats_mhca.features[pool_inv]
         else:
             voxel_mhca_feats = feats_mhca.features
@@ -178,7 +178,7 @@ class EmbeddingAndPosEnc(nn.Module):
             pool_coords = voxel_feats.indices
             pool_inv = None
 
-        embedding_feats, embedding_coords, ffs_feats = self.embedding(voxel_feats, batch_size)
+        embedding_feats, embedding_coords, ffs_feats = self.embedding(voxel_feats, device)
         '''Position Encoding'''
         for i in range(batch_size):
             emb_mask = embedding_coords[:, 0] == i
